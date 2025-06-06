@@ -68,7 +68,7 @@ export class VectorService {
       // Call the match function
       const { data, error } = await supabaseClient.rpc("match_documents", {
         query_embedding: queryEmbedding,
-        match_threshold: 0.78,
+        match_threshold: 0.7,
         match_count: k,
         filter: filter,
       })
