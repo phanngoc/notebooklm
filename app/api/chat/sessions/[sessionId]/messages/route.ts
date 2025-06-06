@@ -6,13 +6,15 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { sessionId: string } }
 ) {
+
+  const { sessionId } = await params
   try {
     const user = await getSessionFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const messages = await dbService.getChatMessages(params.sessionId)
+    const messages = await dbService.getChatMessages(sessionId)
     return NextResponse.json(messages)
   } catch (error) {
     console.error("Error fetching chat messages:", error)

@@ -85,7 +85,9 @@ export function ChatPanel({ messages, documents, onSendMessage, isLoading, onNew
                     {message.role === "user" && <User className="w-5 h-5 text-white mt-0.5 flex-shrink-0" />}
                     <div className="flex-1">
                       <div className="whitespace-pre-wrap text-sm">{message.content}</div>
-                      <div className="text-xs opacity-70 mt-2">{message.timestamp.toLocaleTimeString()}</div>
+                      <div className="text-xs opacity-70 mt-2">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </div>
                       {message.sources && message.sources.length > 0 && (
                         <div className="text-xs mt-2 text-gray-500">
                           Sources: {message.sources.length} document{message.sources.length > 1 ? "s" : ""}

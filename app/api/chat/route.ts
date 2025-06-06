@@ -22,6 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Message and source IDs are required" }, { status: 400 })
     }
 
+    console.log("Received message:", message)
+    console.log("Source IDs:", sourceIds)
+    console.log("Session ID:", sessionId)
     // Save user message to database
     if (sessionId) {
       await dbService.addChatMessage(sessionId, {
@@ -36,7 +39,8 @@ export async function POST(request: NextRequest) {
     try {
       // Try to perform similarity search to get relevant context
       const relevantDocs = await vectorService.similaritySearch(message, sourceIds, 5)
-
+      console.log("Relevant documents found:", relevantDocs.length)
+      console.log("Relevant documents:", relevantDocs)
       if (relevantDocs.length > 0) {
         context = relevantDocs
           .map((doc: any) => `Source: ${doc.metadata.title || doc.sourceId}\nContent: ${doc.content}`)
@@ -82,7 +86,7 @@ Please let them know that there was an issue accessing their documents and sugge
       temperature: 0.7,
       max_tokens: 1000,
     })
-
+    console.log("AI response generated successfully", completion.choices[0]?.message)
     const aiResponse = completion.choices[0]?.message?.content || "Sorry, I could not generate a response."
 
     // Save AI response to database
