@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: notebookllm-qdrant
+    ports:
+      - "6333:6333"  # REST API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__LOG_LEVEL: INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  supabase-db:
+    image: supabase/postgres:15.1.0.117
+    container_name: supabase-notebookllm
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notebookllm
+      POSTGRES_USER: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - supabase_data:/var/lib/postgresql/data
+
+  # Supabase Studio (Web UI for database management)
+  supabase-studio:
+    image: supabase/studio
+    container_name: supabase-studio
+    restart: unless-stopped
+    ports:
+      - "8000:3000"
+    environment:
+      SUPABASE_URL: http://supabase-db:5432
+      SUPABASE_REST_URL: http://localhost:54321/rest/v1/
+      STUDIO_PG_META_URL: http://localhost:54321/pg
+      POSTGRES_PASSWORD: postgres
+      DEFAULT_ORGANIZATION_NAME: "NotebookLLM"
+      DEFAULT_PROJECT_NAME: "NotebookLLM"
+      LOGFLARE_API_KEY: ""
+      LOGFLARE_URL: ""
+      NEXT_PUBLIC_ENABLE_LOGS: "true"
+    depends_on:
+      - supabase-db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis (for caching and session storage)
+  redis:
+    image: redis:7-alpine
+    container_name: notebookllm-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Chat Memory gRPC Service
+  chat-memory-grpc:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: notebookllm-chat-memory
+    ports:
+      - "50051:50051"  # gRPC port
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+    volumes:
+      - ./ai:/app
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; grpc.insecure_channel('localhost:50051').get_state()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: notebookllm-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/password123
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 2G
+      NEO4J_dbms_memory_pagecache_size: 1G
+      NEO4J_dbms_default__database: notebookllm
+      NEO4J_dbms_security_procedures_unrestricted: gds.*,apoc.*
+      NEO4J_dbms_security_procedures_allowlist: gds.*,apoc.*
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password123", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  qdrant_storage:
+    driver: local
+  supabase_data:
+    driver: local
+  redis_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_plugins:
+    driver: local
+
+networks:
+  default:
+    name: notebookllm-network
