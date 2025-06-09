@@ -122,7 +122,8 @@ Be concise and accurate in your responses.
         """Add memories to the system"""
         try:
             logger.info(f"Adding memories for user: {request.user_id}")
-            
+            logger.info(f"Received {len(request.messages)} messages to add")
+            logger.info(f"Messages: {request.messages}")
             # Convert protobuf messages to dictionary format
             messages = []
             for msg in request.messages:
