@@ -1,0 +1,6 @@
+grpcio
+grpcio-tools
+openai
+mem0ai
+python-dotenv
+qdrant-client

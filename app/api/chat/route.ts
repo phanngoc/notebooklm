@@ -3,6 +3,7 @@ import { OpenAI } from "openai"
 import { vectorService } from "@/lib/langchain"
 import { dbService } from "@/lib/database"
 import { getSessionFromRequest } from "@/lib/session"
+import { chatMemoryClient } from "@/lib/grpc-client"
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
     console.log("Received message:", message)
     console.log("Source IDs:", sourceIds)
     console.log("Session ID:", sessionId)
+    
     // Save user message to database
     if (sessionId) {
       await dbService.addChatMessage(sessionId, {
@@ -40,7 +42,7 @@ export async function POST(request: NextRequest) {
       // Try to perform similarity search to get relevant context
       const relevantDocs = await vectorService.similaritySearch(message, sourceIds, 5)
       console.log("Relevant documents found:", relevantDocs.length)
-      console.log("Relevant documents:", relevantDocs)
+      
       if (relevantDocs.length > 0) {
         context = relevantDocs
           .map((doc: any) => `Source: ${doc.metadata.title || doc.sourceId}\nContent: ${doc.content}`)
@@ -64,9 +66,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create the prompt with context
+    let aiResponse: string = ""
+    let memoryResponse: string = ""
+    let messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = []
+
+    try {
+      // Use gRPC to get AI response with memory integration
+      console.log("Calling gRPC server for chat with memories...")
+      const grpcResponse = await chatMemoryClient.searchMemories({
+        query: message,
+        user_id: user.id,
+        limit: 5,
+      })
+
+      if (grpcResponse.success) {
+        // The gRPC response already includes context-aware AI response
+        memoryResponse = grpcResponse.memories.join("\n\n---\n\n")
+        context = context + `\n\n---\n\n` + memoryResponse
+        console.log("gRPC response received successfully: new context:", memoryResponse)
+      } else {
+        throw new Error(grpcResponse.error || "gRPC call failed")
+      }
+    } catch (grpcError) {
+      console.error("gRPC call failed, falling back to direct OpenAI:", grpcError)
+
+    }
+
     const systemPrompt = context
-      ? `You are a helpful AI assistant that answers questions based on the provided documents. 
+        ? `You are a helpful AI assistant that answers questions based on the provided documents. 
 Use only the information from the provided context to answer questions. 
 If the answer cannot be found in the context, say so clearly.
 Be concise and accurate in your responses.
@@ -76,19 +103,23 @@ ${context}`
       : `You are a helpful AI assistant. The user has selected some documents but I couldn't retrieve the specific content. 
 Please let them know that there was an issue accessing their documents and suggest they try again.`
 
-    // Generate AI response
+    messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: message },
+    ]
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message },
-      ],
+      messages: messages,
       temperature: 0.7,
       max_tokens: 1000,
     })
-    console.log("AI response generated successfully", completion.choices[0]?.message)
-    const aiResponse = completion.choices[0]?.message?.content || "Sorry, I could not generate a response."
 
+    aiResponse = completion.choices[0]?.message?.content || "Sorry, I could not generate a response."
+    messages.push({ role: "assistant", content: aiResponse })
+
+    console.log("AI response generated successfully")
+    
     // Save AI response to database
     if (sessionId) {
       await dbService.addChatMessage(sessionId, {
@@ -96,6 +127,13 @@ Please let them know that there was an issue accessing their documents and sugge
         content: aiResponse,
         sources: relevantSources,
       })
+
+      const grpcResponse = await chatMemoryClient.addMemories({
+        messages: messages,
+        user_id: user.id,
+      })
+
+      console.log("gRPC memories added successfully:", grpcResponse)
     }
 
     return NextResponse.json({
