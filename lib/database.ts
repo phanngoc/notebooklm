@@ -13,6 +13,49 @@ export class DatabaseService {
     }
   }
 
+  // Projects list
+  async getProjects(userId: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from("projects")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+      if (error) {
+        console.error("Error fetching projects:", error)
+        throw error
+      }
+      return data || []
+    } catch (error) {
+      console.error("Error fetching projects:", error)
+      throw error
+    }
+  }
+
+  // create project
+  async createProject(userId: string, name: string, description?: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from("projects")
+        .insert({
+          user_id: userId,
+          name: name || "New Project",
+          description: description || "A new project",
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error creating project:", error)
+        throw error
+      }
+      return data
+    } catch (error) {
+      console.error("Error creating project:", error)
+      throw error
+    }
+  }
+
   // Projects operations
   async getProject(projectId: string, userId: string) {
     try {
