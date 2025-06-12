@@ -24,8 +24,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { title } = await request.json()
-    const newSession = await dbService.createChatSession(user.id, title || "New Chat")
+    const { title, projectId } = await request.json()
+    
+    if (!projectId) {
+      return NextResponse.json({ error: "Project ID is required" }, { status: 400 })
+    }
+
+    const newSession = await dbService.createChatSession(user.id, title || "New Chat", projectId)
     return NextResponse.json(newSession)
   } catch (error) {
     console.error("Error creating chat session:", error)

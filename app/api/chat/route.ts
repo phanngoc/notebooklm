@@ -17,15 +17,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { message, sourceIds, sessionId } = await request.json()
+    const { message, sourceIds, sessionId, projectId } = await request.json()
 
     if (!message || !sourceIds || sourceIds.length === 0) {
       return NextResponse.json({ error: "Message and source IDs are required" }, { status: 400 })
     }
 
+    if (!projectId) {
+      return NextResponse.json({ error: "Project ID is required" }, { status: 400 })
+    }
+
     console.log("Received message:", message)
     console.log("Source IDs:", sourceIds)
     console.log("Session ID:", sessionId)
+    console.log("Project ID:", projectId)
     
     // Save user message to database
     if (sessionId) {

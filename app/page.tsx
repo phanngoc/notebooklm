@@ -3,7 +3,7 @@
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
-import Dashboard from "@/components/dashboard"
+import ProjectList from "@/app/components/project-list"
 import { Loader2 } from "lucide-react"
 
 export default function Home() {
@@ -31,5 +31,5 @@ export default function Home() {
     return null
   }
 
-  return <Dashboard userId={user.id} />
+  return <ProjectList userId={user.id} />
 }
