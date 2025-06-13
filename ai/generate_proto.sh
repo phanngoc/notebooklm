@@ -1,8 +1,11 @@
 #!/bin/bash
 
 # Generate Python protobuf files
-python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. chat_memory.proto
+python -m grpc_tools.protoc -I=proto --python_out=generated --grpc_python_out=generated chat_memory.proto
+python -m grpc_tools.protoc -I=proto --python_out=generated --grpc_python_out=generated graphrag.proto
 
 echo "Generated protobuf files:"
-echo "- chat_memory_pb2.py"
-echo "- chat_memory_pb2_grpc.py"
+echo "- generated/chat_memory_pb2.py"
+echo "- generated/chat_memory_pb2_grpc.py"
+echo "- generated/graphrag_pb2.py"
+echo "- generated/graphrag_pb2_grpc.py"

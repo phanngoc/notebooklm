@@ -1,12 +1,21 @@
 import grpc
 from concurrent import futures
+import os
+import logging
+import sys
+
+# Add generated directory to path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'generated'))
+
 import chat_memory_pb2
 import chat_memory_pb2_grpc
+import graphrag_pb2
+import graphrag_pb2_grpc
+
 from openai import OpenAI
 from mem0 import Memory
 from dotenv import load_dotenv
-import os
-import logging
+from services.graphrag import GraphRAGService
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -176,23 +185,89 @@ Be concise and accurate in your responses.
                 error=str(e)
             )
 
+# Initialize GraphRAG service
+graphrag_service = GraphRAGService()
+
+class GraphRAGServicer(graphrag_pb2_grpc.GraphRAGServiceServicer):
+    
+    def InsertContent(self, request, context):
+        """Insert content into the knowledge graph"""
+        try:
+            logger.info(f"Received insert request for user: {request.user_id}")
+            logger.info(f"Content length: {len(request.content)}")
+            
+            content = request.content
+            # Insert content using the GraphRAG service
+            result = graphrag_service.insert(
+                content=content,
+                user_id=request.user_id,
+                project_id=request.project_id or "default"
+            )
+            
+            return graphrag_pb2.InsertResponse(
+                success=result['success'],
+                error=result.get('error', '')
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in InsertContent: {str(e)}")
+            return graphrag_pb2.InsertResponse(
+                success=False,
+                error=str(e)
+            )
+    
+    def QueryGraph(self, request, context):
+        """Query the knowledge graph for relevant information"""
+        try:
+            logger.info(f"Received query request for user: {request.user_id}")
+            logger.info(f"Query: {request.query}")
+            
+            # Query the graph using the GraphRAG service
+            result = graphrag_service.query_graph(
+                query=request.query,
+                user_id=request.user_id,
+                project_id=request.project_id or "default"
+            )
+
+            return graphrag_pb2.QueryResponse(
+                response=result['response'],
+                context=graphrag_pb2.GraphContext(),
+                success=result['success'],
+                error=result.get('error', '')
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in QueryGraph: {str(e)}")
+            return graphrag_pb2.QueryResponse(
+                response="",
+                entities=[],
+                relationships=[],
+                context=graphrag_pb2.GraphContext(),
+                success=False,
+                error=str(e)
+            )
+
+
 def serve():
-    """Start the gRPC server"""
+    """Start the GraphRAG gRPC server"""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     chat_memory_pb2_grpc.add_ChatMemoryServiceServicer_to_server(
         ChatMemoryServicer(), server
     )
+    graphrag_pb2_grpc.add_GraphRAGServiceServicer_to_server(
+        GraphRAGServicer(), server
+    )
     
-    listen_addr = '[::]:50051'
+    listen_addr = '[::]:50052'  # Different port from chat memory service
     server.add_insecure_port(listen_addr)
     
-    logger.info(f"Starting gRPC server on {listen_addr}")
+    logger.info(f"Starting GraphRAG gRPC server on {listen_addr}")
     server.start()
     
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        logger.info("Shutting down gRPC server...")
+        logger.info("Shutting down GraphRAG gRPC server...")
         server.stop(0)
 
 if __name__ == '__main__':

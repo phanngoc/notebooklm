@@ -9,6 +9,8 @@ echo "Setting up Python gRPC server..."
 echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
+mkdir -p ./data
+
 # Generate protobuf files
 echo "Generating protobuf files..."
 chmod +x generate_proto.sh

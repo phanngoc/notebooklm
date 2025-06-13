@@ -73,6 +73,8 @@ export class VectorService {
         filter: filter,
       })
 
+      console.log("Similarity search results:", data)
+
       if (error) throw error
 
       return (data || []).map((doc: any) => ({
