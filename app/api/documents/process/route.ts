@@ -11,10 +11,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { content, title, type, url } = await request.json()
+    const { content, title, type, url, projectId } = await request.json()
 
     if (!content) {
       return NextResponse.json({ error: "Content is required" }, { status: 400 })
+    }
+
+    if (!projectId) {
+      return NextResponse.json({ error: "Project ID is required" }, { status: 400 })
     }
 
     // Save source to database first
@@ -23,7 +27,7 @@ export async function POST(request: NextRequest) {
       type: type || "text",
       content,
       url,
-    })
+    }, projectId)
 
     // Process document for vector search
     const result = await vectorService.addDocuments(source.id, content, {

@@ -4,3 +4,5 @@ openai
 mem0ai
 python-dotenv
 qdrant-client
+# GraphRAG dependencies
+fast-graphrag

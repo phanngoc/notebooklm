@@ -7,12 +7,17 @@ import { ChatPanel } from "@/components/chat-panel"
 import { StudioPanel } from "@/components/studio-panel"
 import { useToast } from "@/hooks/use-toast"
 import type { Document, ChatMessage, Note } from "@/types"
-import { Loader2 } from "lucide-react"
+import { Loader2, LogOut, User, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { LogOut, User } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 
-export default function Dashboard({ userId }: { userId: string }) {
+interface DashboardProps {
+  userId: string | undefined
+  projectId: string
+  authLoading?: boolean
+}
+
+export default function Dashboard({ userId, projectId, authLoading }: DashboardProps) {
   const router = useRouter()
   const { logout } = useAuth()
   const [documents, setDocuments] = useState<Document[]>([])
@@ -23,20 +28,25 @@ export default function Dashboard({ userId }: { userId: string }) {
   const [isInitializing, setIsInitializing] = useState(true)
   const { toast } = useToast()
   const [userName, setUserName] = useState<string>("")
+  const [projectName, setProjectName] = useState<string>("")
 
   useEffect(() => {
-    if (userId) {
-      loadUserData(userId)
+    if (userId && projectId) {
+      loadUserData(userId, projectId)
     }
-  }, [userId])
+  }, [userId, projectId])
 
-  const loadUserData = async (userId: string) => {
+  const loadUserData = async (userId: string, projectId: string) => {
     try {
       setIsInitializing(true)
       console.log("Loading user data for:", userId)
 
-      // Fetch user profile
-      const profileResponse = await fetch("/api/user/profile")
+      // Fetch user profile and project info
+      const [profileResponse, projectResponse] = await Promise.all([
+        fetch("/api/user/profile"),
+        fetch(`/api/projects/${projectId}`)
+      ])
+      
       if (profileResponse.ok) {
         const { profile } = await profileResponse.json()
         if (profile) {
@@ -44,11 +54,16 @@ export default function Dashboard({ userId }: { userId: string }) {
         }
       }
 
+      if (projectResponse.ok) {
+        const project = await projectResponse.json()
+        setProjectName(project.name || "Untitled Project")
+      }
+
       // Fetch sources, notes, and chat sessions in parallel
       const [sourcesResponse, notesResponse, sessionsResponse] = await Promise.all([
-        fetch("/api/sources"),
-        fetch("/api/notes"),
-        fetch("/api/chat/sessions/list"),
+        fetch(`/api/sources?projectId=${projectId}`),
+        fetch(`/api/notes?projectId=${projectId}`),
+        fetch(`/api/chat/sessions/list?projectId=${projectId}`),
       ])
 
       if (!sourcesResponse.ok || !notesResponse.ok || !sessionsResponse.ok) {
@@ -72,7 +87,7 @@ export default function Dashboard({ userId }: { userId: string }) {
         const createResponse = await fetch("/api/chat/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "New Chat" }),
+          body: JSON.stringify({ title: "New Chat", projectId }),
         })
         if (!createResponse.ok) {
           throw new Error("Failed to create chat session")
@@ -118,6 +133,7 @@ export default function Dashboard({ userId }: { userId: string }) {
         body: JSON.stringify({
           ...doc,
           userId,
+          projectId,
         }),
       })
 
@@ -129,7 +145,7 @@ export default function Dashboard({ userId }: { userId: string }) {
       const result = await response.json()
 
       // Reload sources
-      const sourcesResponse = await fetch("/api/sources")
+      const sourcesResponse = await fetch(`/api/sources?projectId=${projectId}`)
       if (sourcesResponse.ok) {
         const sources = await sourcesResponse.json()
         setDocuments(
@@ -225,6 +241,7 @@ export default function Dashboard({ userId }: { userId: string }) {
           message: content,
           sourceIds: selectedSources.map((doc) => doc.id),
           sessionId: currentSessionId,
+          projectId,
         }),
       })
 
@@ -283,7 +300,7 @@ export default function Dashboard({ userId }: { userId: string }) {
       const response = await fetch("/api/notes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note, sourceIds: selectedSourceIds }),
+        body: JSON.stringify({ note, sourceIds: selectedSourceIds, projectId }),
       })
 
       if (!response.ok) {
@@ -291,7 +308,7 @@ export default function Dashboard({ userId }: { userId: string }) {
       }
 
       // Reload notes
-      const notesResponse = await fetch("/api/notes")
+      const notesResponse = await fetch(`/api/notes?projectId=${projectId}`)
       if (notesResponse.ok) {
         const updatedNotes = await notesResponse.json()
         setNotes(updatedNotes)
@@ -353,7 +370,7 @@ export default function Dashboard({ userId }: { userId: string }) {
       const createResponse = await fetch("/api/chat/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "New Chat" }),
+        body: JSON.stringify({ title: "New Chat", projectId }),
       })
       if (!createResponse.ok) {
         throw new Error("Failed to create chat session")
@@ -385,13 +402,30 @@ export default function Dashboard({ userId }: { userId: string }) {
     router.push("/login")
   }
 
-  // Show loading while initializing
-  if (isInitializing) {
+  const handleBackToProjects = () => {
+    router.push("/")
+  }
+
+  // Show loading while initializing or auth is loading
+  if (authLoading || isInitializing) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-lg">Loading your workspace...</p>
+          <p className="text-lg">
+            {authLoading ? "Authenticating..." : "Loading your workspace..."}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Check if user is authenticated
+  if (!userId) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg">Please log in to access your workspace.</p>
         </div>
       </div>
     )
@@ -402,7 +436,24 @@ export default function Dashboard({ userId }: { userId: string }) {
     <div className="flex flex-col h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 py-2 px-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">NotebookLLM</h1>
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleBackToProjects}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Projects
+            </Button>
+            <h1 className="text-xl font-bold">NotebookLLM</h1>
+            {projectName && (
+              <div className="text-gray-500">
+                <span className="text-sm">•</span>
+                <span className="text-sm ml-2">{projectName}</span>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <User className="w-4 h-4" />

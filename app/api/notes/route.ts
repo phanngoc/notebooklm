@@ -9,7 +9,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const notes = await dbService.getNotes(user.id)
+    const { searchParams } = new URL(request.url)
+    const projectId = searchParams.get("projectId")
+    
+    if (!projectId) {
+      return NextResponse.json({ error: "Project ID is required" }, { status: 400 })
+    }
+
+    const notes = await dbService.getNotes(user.id, projectId)
     return NextResponse.json(notes)
   } catch (error) {
     console.error("Error fetching notes:", error)
@@ -24,13 +31,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { note, sourceIds } = await request.json()
+    const { note, sourceIds, projectId } = await request.json()
     
     if (!note) {
       return NextResponse.json({ error: "Note data is required" }, { status: 400 })
     }
 
-    const newNote = await dbService.addNote(user.id, note, sourceIds || [])
+    if (!projectId) {
+      return NextResponse.json({ error: "Project ID is required" }, { status: 400 })
+    }
+
+    const newNote = await dbService.addNote(user.id, note, sourceIds || [], projectId)
     return NextResponse.json(newNote)
   } catch (error) {
     console.error("Error creating note:", error)

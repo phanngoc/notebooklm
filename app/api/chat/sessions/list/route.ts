@@ -9,7 +9,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const chatSessions = await dbService.getChatSessions(user.id)
+    const { searchParams } = new URL(request.url)
+    const projectId = searchParams.get("projectId")
+    
+    if (!projectId) {
+      return NextResponse.json({ error: "Project ID is required" }, { status: 400 })
+    }
+
+    const chatSessions = await dbService.getChatSessions(user.id, projectId)
     return NextResponse.json(chatSessions)
   } catch (error) {
     console.error("Error fetching chat sessions:", error)

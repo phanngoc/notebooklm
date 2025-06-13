@@ -3,6 +3,7 @@ import { createServerClient } from "./supabase"
 
 export class DatabaseService {
   private supabase = createServerClient()
+  
   async getUserProfile(userId: string) {
     try {
       return await this.supabase.from("profiles").select("id, email, full_name").eq("id", userId).single()
@@ -12,14 +13,84 @@ export class DatabaseService {
     }
   }
 
-  // Sources operations
-  async getSources(userId: string): Promise<Document[]> {
+  // Projects list
+  async getProjects(userId: string) {
     try {
       const { data, error } = await this.supabase
-        .from("sources")
+        .from("projects")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
+      if (error) {
+        console.error("Error fetching projects:", error)
+        throw error
+      }
+      return data || []
+    } catch (error) {
+      console.error("Error fetching projects:", error)
+      throw error
+    }
+  }
+
+  // create project
+  async createProject(userId: string, name: string, description?: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from("projects")
+        .insert({
+          user_id: userId,
+          name: name || "New Project",
+          description: description || "A new project",
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error creating project:", error)
+        throw error
+      }
+      return data
+    } catch (error) {
+      console.error("Error creating project:", error)
+      throw error
+    }
+  }
+
+  // Projects operations
+  async getProject(projectId: string, userId: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from("projects")
+        .select("*")
+        .eq("id", projectId)
+        .eq("user_id", userId)
+        .single()
+
+      if (error) {
+        console.error("Error fetching project:", error)
+        throw error
+      }
+
+      return data
+    } catch (error) {
+      console.error("Error fetching project:", error)
+      throw error
+    }
+  }
+
+  // Sources operations
+  async getSources(userId: string, projectId?: string): Promise<Document[]> {
+    try {
+      let query = this.supabase
+        .from("sources")
+        .select("*")
+        .eq("user_id", userId)
+
+      if (projectId) {
+        query = query.eq("project_id", projectId)
+      }
+
+      const { data, error } = await query.order("created_at", { ascending: false })
 
       if (error) {
         console.error("Error fetching sources:", error)
@@ -41,7 +112,7 @@ export class DatabaseService {
     }
   }
 
-  async addSource(userId: string, source: Omit<Document, "id" | "selected" | "createdAt">) {
+  async addSource(userId: string, source: Omit<Document, "id" | "selected" | "createdAt">, projectId?: string) {
     try {
       const { data, error } = await this.supabase
         .from("sources")
@@ -51,6 +122,7 @@ export class DatabaseService {
           type: source.type,
           content: source.content,
           url: source.url,
+          project_id: projectId,
         })
         .select()
         .single()
@@ -81,13 +153,18 @@ export class DatabaseService {
   }
 
   // Chat operations
-  async getChatSessions(userId: string) {
+  async getChatSessions(userId: string, projectId?: string) {
     try {
-      const { data, error } = await this.supabase
+      let query = this.supabase
         .from("chat_sessions")
         .select("*")
         .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
+
+      if (projectId) {
+        query = query.eq("project_id", projectId)
+      }
+
+      const { data, error } = await query.order("updated_at", { ascending: false })
 
       if (error) {
         console.error("Error fetching chat sessions:", error)
@@ -100,13 +177,14 @@ export class DatabaseService {
     }
   }
 
-  async createChatSession(userId: string, title?: string) {
+  async createChatSession(userId: string, title?: string, projectId?: string) {
     try {
       const { data, error } = await this.supabase
         .from("chat_sessions")
         .insert({
           user_id: userId,
           title: title || "New Chat",
+          project_id: projectId,
         })
         .select()
         .single()
@@ -200,13 +278,18 @@ export class DatabaseService {
   }
 
   // Notes operations
-  async getNotes(userId: string): Promise<Note[]> {
+  async getNotes(userId: string, projectId?: string): Promise<Note[]> {
     try {
-      const { data, error } = await this.supabase
+      let query = this.supabase
         .from("notes")
         .select("*")
         .eq("user_id", userId)
-        .order("created_at", { ascending: false })
+
+      if (projectId) {
+        query = query.eq("project_id", projectId)
+      }
+
+      const { data, error } = await query.order("created_at", { ascending: false })
 
       if (error) {
         console.error("Error fetching notes:", error)
@@ -225,7 +308,7 @@ export class DatabaseService {
     }
   }
 
-  async addNote(userId: string, note: Omit<Note, "id" | "createdAt">, sourceIds: string[] = []) {
+  async addNote(userId: string, note: Omit<Note, "id" | "createdAt">, sourceIds: string[] = [], projectId?: string) {
     try {
       const { data, error } = await this.supabase
         .from("notes")
@@ -234,6 +317,7 @@ export class DatabaseService {
           title: note.title,
           content: note.content,
           source_ids: sourceIds,
+          project_id: projectId,
         })
         .select()
         .single()

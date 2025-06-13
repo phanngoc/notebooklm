@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package graphrag;
+
+// The GraphRAG service definition
+service GraphRAGService {
+  // Insert content into the knowledge graph
+  rpc InsertContent (InsertContentRequest) returns (InsertResponse);
+  
+  // Query the knowledge graph for relevant information
+  rpc QueryGraph (QueryRequest) returns (QueryResponse);
+}
+
+// Document to be inserted
+message Document {
+  string id = 1;
+  string content = 2;
+  string title = 3;
+  map<string, string> metadata = 4;
+  string user_id = 5;
+}
+
+// Request for inserting content
+message InsertContentRequest {
+  string content = 1;
+  string user_id = 2;
+  string project_id = 3;
+}
+
+// Response for content insertion
+message InsertResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Request for querying the graph
+message QueryRequest {
+  string query = 1;
+  string user_id = 2;
+  string project_id = 3;
+  int32 max_results = 4;
+  float similarity_threshold = 5;
+  repeated string entity_types = 6;
+}
+
+// Context information with entities and relationships
+message GraphContext {
+  repeated string relevant_documents = 3;
+}
+
+// Response for graph queries
+message QueryResponse {
+  string response = 1;
+  GraphContext context = 4;
+  bool success = 5;
+  string error = 6;
+}
