@@ -10,8 +10,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const sourceId = params.id
+    const { id } = await params
+    const sourceId = id
 
     if (!sourceId) {
       return NextResponse.json({ error: "Source ID is required" }, { status: 400 })

@@ -362,6 +362,42 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     }
   }
 
+  const convertNoteToSource = async (noteId: string) => {
+    try {
+      setIsLoading(true)
+
+      // Convert note to source via API
+      const response = await fetch(`/api/notes/${noteId}/source`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to convert note to source")
+      }
+
+      const result = await response.json()
+
+      // Reload documents to include the new source
+      await fetchDocuments()
+
+      toast({
+        title: "Note converted to source",
+        description: `Your note has been successfully converted to a source with ${result.chunksProcessed} chunks processed.`,
+      })
+    } catch (error) {
+      console.error("Error converting note to source:", error)
+      toast({
+        title: "Error",
+        description: "Failed to convert note to source. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const createNewChatSession = async () => {
     try {
       setIsLoading(true)

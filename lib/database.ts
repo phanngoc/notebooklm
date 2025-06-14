@@ -308,6 +308,35 @@ export class DatabaseService {
     }
   }
 
+  async getNote(noteId: string): Promise<Note | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from("notes")
+        .select("*")
+        .eq("id", noteId)
+        .single()
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No rows returned
+          return null
+        }
+        console.error("Error fetching note:", error)
+        throw error
+      }
+
+      return {
+        id: data.id,
+        title: data.title,
+        content: data.content,
+        createdAt: new Date(data.created_at),
+      }
+    } catch (error) {
+      console.error("Error fetching note:", error)
+      throw error
+    }
+  }
+
   async addNote(userId: string, note: Omit<Note, "id" | "createdAt">, sourceIds: string[] = [], projectId?: string) {
     try {
       const { data, error } = await this.supabase

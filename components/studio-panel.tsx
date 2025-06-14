@@ -17,17 +17,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import type { Document, Note } from "@/types"
-import { Plus, FileText, Headphones, BookOpen, Clock, Trash2 } from "lucide-react"
+import { Plus, FileText, Headphones, BookOpen, Clock, Trash2, FileUp } from "lucide-react"
 
 interface StudioPanelProps {
   notes: Note[]
   onAddNote: (note: Omit<Note, "id" | "createdAt">) => void
   onDeleteNote: (noteId: string) => void
+  onConvertToSource: (noteId: string) => void
   documents: Document[]
   isLoading: boolean
+  projectId: string
 }
 
-export function StudioPanel({ notes, onAddNote, onDeleteNote, documents, isLoading }: StudioPanelProps) {
+export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource, documents, isLoading, projectId }: StudioPanelProps) {
   const [isAddingNote, setIsAddingNote] = useState(false)
   const [noteTitle, setNoteTitle] = useState("")
   const [noteContent, setNoteContent] = useState("")
@@ -120,6 +122,7 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, documents, isLoadi
                     onChange={(e) => setNoteContent(e.target.value)}
                     rows={4}
                   />
+                  // TODO: Implement convert to source logic
                   <div className="flex gap-2">
                     <Button onClick={handleAddNote} size="sm" disabled={isLoading}>
                       Save
@@ -144,14 +147,32 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, documents, isLoadi
                         <p className="text-xs text-gray-600 line-clamp-3 mb-2">{note.content}</p>
                         <div className="flex items-center gap-1 text-xs text-gray-400">
                           <Clock className="w-3 h-3" />
-                          {note.createdAt.toLocaleDateString()}
+                            {new Date(note.createdAt).toLocaleString(undefined, {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            })}
+                        </div>
+                        <div className="flex gap-1 mt-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onConvertToSource(note.id)}
+                            className="text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
+                            disabled={isLoading}
+                          >
+                            <FileUp className="w-3 h-3 mr-1" />
+                            Convert to Source
+                          </Button>
                         </div>
                       </div>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={() => confirmDeleteNote(note.id)}
-                        className="text-red-500 hover:text-red-700"
+                        className="text-red-500 hover:text-red-700 ml-2"
                         disabled={isLoading}
                       >
                         <Trash2 className="w-4 h-4" />
