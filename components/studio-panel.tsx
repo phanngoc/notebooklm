@@ -122,7 +122,6 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
                     onChange={(e) => setNoteContent(e.target.value)}
                     rows={4}
                   />
-                  // TODO: Implement convert to source logic
                   <div className="flex gap-2">
                     <Button onClick={handleAddNote} size="sm" disabled={isLoading}>
                       Save
