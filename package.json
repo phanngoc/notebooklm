@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "graphrag:start": "cd ai && ./start_graphrag_server.sh",
+    "graphrag:test": "node scripts/test-graphrag.js"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.13.4",

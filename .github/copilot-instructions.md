@@ -191,18 +191,6 @@ Key tables:
 
 ## Common Patterns to Follow
 
-### Document Processing
-1. Upload document via API
-2. Split into chunks using TextSplitter
-3. Generate embeddings with OpenAI
-4. Store in Supabase with metadata
-5. Enable similarity search
-
-### Chat Flow
-1. Retrieve relevant documents using vector search
-2. Send context to OpenAI with user message
-3. Stream response back to client
-4. Store conversation in database
 
 ### State Management
 - Use React hooks for local state

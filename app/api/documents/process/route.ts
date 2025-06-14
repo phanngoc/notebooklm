@@ -7,6 +7,7 @@ export async function POST(request: NextRequest) {
   try {
     // Get user from session
     const user = await getSessionFromRequest(request)
+    console.log("Processing document upload for user:", user)
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -34,6 +35,8 @@ export async function POST(request: NextRequest) {
       title: source.title,
       type: source.type,
       url: source.url,
+      userId: user.id,
+      projectId: projectId,
     })
 
     return NextResponse.json({

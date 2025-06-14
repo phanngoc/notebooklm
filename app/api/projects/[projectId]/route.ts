@@ -12,7 +12,8 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const project = await dbService.getProject(params.projectId, user.id)
+    const { projectId } = await params
+    const project = await dbService.getProject(projectId, user.id)
     
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
