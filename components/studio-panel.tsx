@@ -18,6 +18,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import type { Document, Note } from "@/types"
 import { Plus, FileText, Headphones, BookOpen, Clock, Trash2, FileUp } from "lucide-react"
+import dynamic from 'next/dynamic'
+// import Editor  from "./ui/editor"
+const EditorComp = dynamic(() => import('./ui/editor'), { ssr: false })
 
 interface StudioPanelProps {
   notes: Note[]
@@ -36,6 +39,7 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
 
   const handleAddNote = () => {
+    console.log("Adding note:", noteTitle, noteContent)
     if (noteTitle.trim() && noteContent.trim()) {
       onAddNote({
         title: noteTitle,
@@ -116,12 +120,7 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
               <Card className="p-4">
                 <div className="space-y-3">
                   <Input placeholder="Note title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />
-                  <Textarea
-                    placeholder="Write your note here..."
-                    value={noteContent}
-                    onChange={(e) => setNoteContent(e.target.value)}
-                    rows={4}
-                  />
+                  <EditorComp markdown={noteContent} onChange={setNoteContent}  />
                   <div className="flex gap-2">
                     <Button onClick={handleAddNote} size="sm" disabled={isLoading}>
                       Save
