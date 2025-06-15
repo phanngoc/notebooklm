@@ -19,6 +19,7 @@ interface NotesState {
   createNote: (note: Omit<Note, "id" | "createdAt">, projectId: string, selectedSourceIds?: string[]) => Promise<void>
   removeNote: (noteId: string) => Promise<void>
   convertNoteToSource: (noteId: string, projectId: string) => Promise<void>
+  uploadImage: (image: File, projectId: string) => Promise<string>
 }
 
 export const useNotesStore = create<NotesState>((set, get) => ({
@@ -159,6 +160,28 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         isLoading: false 
       })
       throw error
+    }
+  },
+
+  uploadImage: async (image: File, projectId: string) => {
+    try {
+      const formData = new FormData()
+      formData.append("image", image)
+
+      const response = await fetch(`/api/projects/${projectId}/upload-image`, {
+        method: "POST",
+        body: formData,
+      })
+      
+      if (!response.ok) {
+        throw new Error("Image upload failed")
+      }
+      
+      const data = await response.json()
+      return data.imageUrl
+    } catch (error) {
+      console.error('Error uploading image:', error)
+      throw new Error('Failed to upload image')
     }
   },
 }))

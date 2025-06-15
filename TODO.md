@@ -40,3 +40,6 @@ https://reactflow.dev/
 
 ## Tích hợp paste link
 https://github.com/mendableai/firecrawl?tab=readme-ov-file
+
+## Tích hợp break task cho estimation.
+

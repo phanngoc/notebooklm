@@ -5,9 +5,13 @@ import { MDXEditor, headingsPlugin,
   quotePlugin,
   thematicBreakPlugin,
   markdownShortcutPlugin,
+  imagePlugin,
+  tablePlugin,
   type MDXEditorMethods,
   type MDXEditorProps,
-  toolbarPlugin
+  toolbarPlugin,
+  UndoRedo, BoldItalicUnderlineToggles, BlockTypeSelect,
+  CodeToggle, InsertImage, InsertTable
  } from "@mdxeditor/editor";
 
 import { FC } from "react";
@@ -18,13 +22,21 @@ interface EditorProps {
   markdown: string;
   editorRef?: React.MutableRefObject<MDXEditorMethods | null>;
   onChange?: (markdown: string) => void;
+  imageUploadHandler?: (image: File) => Promise<string>;
 }
 
 /**
  * Extend this Component further with the necessary plugins or props you need.
  * proxying the ref is necessary. Next.js dynamically imported components don't support refs.
  */
-const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange }) => {
+const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange, imageUploadHandler }) => {
+  async function handleImageUpload(image: File) {
+    if (imageUploadHandler) {
+      return imageUploadHandler(image)
+    }
+    return Promise.resolve('https://picsum.photos/200/300')
+  }
+
   return (
     <MDXEditor
       className='prose prose-invert min-w-full'
@@ -38,6 +50,23 @@ const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange }) => {
         quotePlugin(),
         thematicBreakPlugin(),
         markdownShortcutPlugin(),
+        tablePlugin(),
+        imagePlugin({
+          imageUploadHandler: handleImageUpload,
+        }),
+        toolbarPlugin({
+          toolbarClassName: 'my-classname',
+          toolbarContents: () => (
+            <>
+              <UndoRedo />
+              <BoldItalicUnderlineToggles />
+              <BlockTypeSelect />
+              <CodeToggle />
+              <InsertImage />
+              <InsertTable />
+            </>
+          )
+        })
       ]}
     />
   );

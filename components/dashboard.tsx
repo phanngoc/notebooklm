@@ -29,6 +29,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
   const { toast } = useToast()
   const [userName, setUserName] = useState<string>("")
   const [projectName, setProjectName] = useState<string>("")
+  const [isStudioExpanded, setIsStudioExpanded] = useState(false)
   
   // Use Zustand store for notes
   const { 
@@ -497,14 +498,16 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           isLoading={isLoading}
         />
 
-        <ChatPanel
-          messages={messages}
-          documents={documents.filter((doc) => doc.selected)}
-          onSendMessage={sendMessage}
-          isLoading={isLoading}
-          onNewChat={createNewChatSession}
-          sessionId={currentSessionId}
-        />
+        <div className={`transition-all duration-300 ${isStudioExpanded ? 'flex-1' : 'flex-1'}`}>
+          <ChatPanel
+            messages={messages}
+            documents={documents.filter((doc) => doc.selected)}
+            onSendMessage={sendMessage}
+            isLoading={isLoading}
+            onNewChat={createNewChatSession}
+            sessionId={currentSessionId}
+          />
+        </div>
 
         <StudioPanel
           notes={notes}
@@ -514,6 +517,8 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           documents={documents.filter((doc) => doc.selected)}
           isLoading={isLoading || notesLoading}
           projectId={projectId}
+          isExpanded={isStudioExpanded}
+          onExpandedChange={setIsStudioExpanded}
         />
       </div>
     </div>

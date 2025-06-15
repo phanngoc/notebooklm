@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/hooks/use-toast"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +20,8 @@ import {
 import type { Document, Note } from "@/types"
 import { Plus, FileText, Headphones, BookOpen, Clock, Trash2, FileUp } from "lucide-react"
 import dynamic from 'next/dynamic'
-// import Editor  from "./ui/editor"
+import { useNotesStore } from "@/hooks/use-notes-store"
+
 const EditorComp = dynamic(() => import('./ui/editor'), { ssr: false })
 
 interface StudioPanelProps {
@@ -30,13 +32,18 @@ interface StudioPanelProps {
   documents: Document[]
   isLoading: boolean
   projectId: string
+  isExpanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
 }
 
-export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource, documents, isLoading, projectId }: StudioPanelProps) {
+export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource, documents, isLoading, projectId, isExpanded = false, onExpandedChange }: StudioPanelProps) {
   const [isAddingNote, setIsAddingNote] = useState(false)
   const [noteTitle, setNoteTitle] = useState("")
   const [noteContent, setNoteContent] = useState("")
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
+  
+  const { uploadImage } = useNotesStore()
+  const { toast } = useToast()
 
   const handleAddNote = () => {
     console.log("Adding note:", noteTitle, noteContent)
@@ -48,6 +55,20 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
       setNoteTitle("")
       setNoteContent("")
       setIsAddingNote(false)
+      // Exit expanded mode after adding note
+      if (onExpandedChange) {
+        onExpandedChange(false)
+      }
+    }
+  }
+
+  const handleToggleAddNote = () => {
+    const newIsAddingNote = !isAddingNote
+    setIsAddingNote(newIsAddingNote)
+    
+    // Toggle expanded mode when showing/hiding the add note form
+    if (onExpandedChange) {
+      onExpandedChange(newIsAddingNote)
     }
   }
 
@@ -62,8 +83,51 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
     }
   }
 
+  const imageUploadHandler = async (image: File): Promise<string> => {
+    try {
+      // Validate file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024 // 10MB
+      if (image.size > maxSize) {
+        throw new Error('File too large. Maximum size is 10MB.')
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+      if (!allowedTypes.includes(image.type)) {
+        throw new Error('Invalid file type. Only images are allowed.')
+      }
+
+      // Show loading toast
+      toast({
+        title: "Uploading image...",
+        description: "Please wait while your image is being uploaded.",
+      })
+
+      const imageUrl = await uploadImage(image, projectId)
+      
+      // Show success toast
+      toast({
+        title: "Image uploaded successfully!",
+        description: "Your image has been uploaded and is ready to use.",
+      })
+
+      return imageUrl
+    } catch (error) {
+      console.error('Image upload failed:', error)
+      
+      // Show error toast
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : 'Failed to upload image',
+        variant: "destructive",
+      })
+      
+      throw new Error(error instanceof Error ? error.message : 'Failed to upload image')
+    }
+  }
+
   return (
-    <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+    <div className={`bg-white border-l border-gray-200 flex flex-col transition-all duration-300 ${isExpanded ? 'w-496' : 'w-80'}`}>
       <div className="p-4 border-b border-gray-200">
         <h2 className="text-lg font-semibold mb-4">Studio</h2>
 
@@ -111,7 +175,7 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
           <TabsContent value="notes" className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-medium">Your Notes</h3>
-              <Button size="sm" onClick={() => setIsAddingNote(!isAddingNote)} disabled={isLoading}>
+              <Button size="sm" onClick={handleToggleAddNote} disabled={isLoading}>
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
@@ -120,12 +184,12 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
               <Card className="p-4">
                 <div className="space-y-3">
                   <Input placeholder="Note title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />
-                  <EditorComp markdown={noteContent} onChange={setNoteContent}  />
+                  <EditorComp markdown={noteContent} onChange={setNoteContent} imageUploadHandler={imageUploadHandler}  />
                   <div className="flex gap-2">
                     <Button onClick={handleAddNote} size="sm" disabled={isLoading}>
                       Save
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setIsAddingNote(false)} disabled={isLoading}>
+                    <Button variant="outline" size="sm" onClick={handleToggleAddNote} disabled={isLoading}>
                       Cancel
                     </Button>
                   </div>
@@ -134,9 +198,9 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
             )}
 
             <div className="space-y-2">
-              {notes.length === 0 ? (
+              {!isAddingNote && notes.length === 0 ? (
                 <p className="text-sm text-gray-500 text-center py-4">No notes yet. Create your first note!</p>
-              ) : (
+              ) : !isAddingNote ? (
                 notes.map((note) => (
                   <Card key={note.id} className="p-3 hover:bg-gray-50">
                     <div className="flex items-start justify-between">
@@ -178,7 +242,7 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
                     </div>
                   </Card>
                 ))
-              )}
+              ) : null}
             </div>
           </TabsContent>
         </Tabs>
