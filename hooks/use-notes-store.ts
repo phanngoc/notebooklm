@@ -17,6 +17,7 @@ interface NotesState {
   // Async actions
   fetchNotes: (projectId: string) => Promise<void>
   createNote: (note: Omit<Note, "id" | "createdAt">, projectId: string, selectedSourceIds?: string[]) => Promise<void>
+  updateNoteAsync: (noteId: string, note: Omit<Note, "id" | "createdAt">) => Promise<void>
   removeNote: (noteId: string) => Promise<void>
   convertNoteToSource: (noteId: string, projectId: string) => Promise<void>
   uploadImage: (image: File, projectId: string) => Promise<string>
@@ -104,6 +105,42 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         error: error instanceof Error ? error.message : 'Failed to create note',
         isLoading: false 
       })
+    }
+  },
+
+  updateNoteAsync: async (noteId: string, note: Omit<Note, "id" | "createdAt">) => {
+    try {
+      set({ isLoading: true, error: null })
+      
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: note.title,
+          content: note.content,
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to update note')
+      }
+      
+      const updatedNote = await response.json()
+      get().updateNote(noteId, {
+        title: updatedNote.title,
+        content: updatedNote.content,
+      })
+      
+      set({ isLoading: false })
+    } catch (error) {
+      console.error('Error updating note:', error)
+      set({ 
+        error: error instanceof Error ? error.message : 'Failed to update note',
+        isLoading: false 
+      })
+      throw error
     }
   },
 

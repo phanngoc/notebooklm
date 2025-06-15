@@ -27,6 +27,7 @@ const EditorComp = dynamic(() => import('./ui/editor'), { ssr: false })
 interface StudioPanelProps {
   notes: Note[]
   onAddNote: (note: Omit<Note, "id" | "createdAt">) => void
+  onUpdateNote: (noteId: string, note: Omit<Note, "id" | "createdAt">) => void
   onDeleteNote: (noteId: string) => void
   onConvertToSource: (noteId: string) => void
   documents: Document[]
@@ -36,8 +37,9 @@ interface StudioPanelProps {
   onExpandedChange?: (expanded: boolean) => void
 }
 
-export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource, documents, isLoading, projectId, isExpanded = false, onExpandedChange }: StudioPanelProps) {
+export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onConvertToSource, documents, isLoading, projectId, isExpanded = false, onExpandedChange }: StudioPanelProps) {
   const [isAddingNote, setIsAddingNote] = useState(false)
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
   const [noteTitle, setNoteTitle] = useState("")
   const [noteContent, setNoteContent] = useState("")
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null)
@@ -45,8 +47,8 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
   const { uploadImage } = useNotesStore()
   const { toast } = useToast()
 
-  const handleAddNote = () => {
-    console.log("Adding note:", noteTitle, noteContent)
+  const handleSaveNote = () => {
+    console.log("Saving note:", noteTitle, noteContent, editingNoteId)
     // if noteTitle.trim() empty will cut 20 words from content to assign noteTitle
     let noteTitleSaved = noteTitle
     if (!noteTitle.trim()) {
@@ -56,14 +58,27 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
     }
 
     if (noteContent.trim()) {
-      onAddNote({
-        title: noteTitleSaved,
-        content: noteContent,
-      })
+      if (editingNoteId) {
+        // Update existing note
+        onUpdateNote(editingNoteId, {
+          title: noteTitleSaved,
+          content: noteContent,
+        })
+      } else {
+        // Create new note
+        onAddNote({
+          title: noteTitleSaved,
+          content: noteContent,
+        })
+      }
+      
+      // Reset form
       setNoteTitle("")
       setNoteContent("")
       setIsAddingNote(false)
-      // Exit expanded mode after adding note
+      setEditingNoteId(null)
+      
+      // Exit expanded mode after saving note
       if (onExpandedChange) {
         onExpandedChange(false)
       }
@@ -74,9 +89,40 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
     const newIsAddingNote = !isAddingNote
     setIsAddingNote(newIsAddingNote)
     
+    // Reset editing state when adding new note
+    if (newIsAddingNote) {
+      setEditingNoteId(null)
+      setNoteTitle("")
+      setNoteContent("")
+    }
+    
     // Toggle expanded mode when showing/hiding the add note form
     if (onExpandedChange) {
       onExpandedChange(newIsAddingNote)
+    }
+  }
+
+  const handleEditNote = (note: Note) => {
+    setEditingNoteId(note.id)
+    setNoteTitle(note.title)
+    setNoteContent(note.content)
+    setIsAddingNote(true) // Show the editor form
+    
+    // Expand the panel when editing
+    if (onExpandedChange) {
+      onExpandedChange(true)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setIsAddingNote(false)
+    setEditingNoteId(null)
+    setNoteTitle("")
+    setNoteContent("")
+    
+    // Exit expanded mode when canceling
+    if (onExpandedChange) {
+      onExpandedChange(false)
     }
   }
 
@@ -194,10 +240,10 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
                   <Input placeholder="Note title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />
                   <EditorComp markdown={noteContent} onChange={setNoteContent} imageUploadHandler={imageUploadHandler}  />
                   <div className="flex gap-2">
-                    <Button onClick={handleAddNote} size="sm" disabled={isLoading}>
-                      Save
+                    <Button onClick={handleSaveNote} size="sm" disabled={isLoading}>
+                      {editingNoteId ? "Update" : "Save"}
                     </Button>
-                    <Button variant="outline" size="sm" onClick={handleToggleAddNote} disabled={isLoading}>
+                    <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={isLoading}>
                       Cancel
                     </Button>
                   </div>
@@ -210,7 +256,11 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
                 <p className="text-sm text-gray-500 text-center py-4">No notes yet. Create your first note!</p>
               ) : !isAddingNote ? (
                 notes.map((note) => (
-                  <Card key={note.id} className="p-3 hover:bg-gray-50">
+                  <Card 
+                    key={note.id} 
+                    className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => handleEditNote(note)}
+                  >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-sm mb-1">{note.title}</h4>
@@ -229,7 +279,10 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => onConvertToSource(note.id)}
+                            onClick={(e) => {
+                              e.stopPropagation() // Prevent card click
+                              onConvertToSource(note.id)
+                            }}
                             className="text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
                             disabled={isLoading}
                           >
@@ -241,7 +294,10 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => confirmDeleteNote(note.id)}
+                        onClick={(e) => {
+                          e.stopPropagation() // Prevent card click
+                          confirmDeleteNote(note.id)
+                        }}
                         className="text-red-500 hover:text-red-700 ml-2"
                         disabled={isLoading}
                       >

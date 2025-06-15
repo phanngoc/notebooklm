@@ -38,6 +38,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     error: notesError,
     fetchNotes,
     createNote,
+    updateNoteAsync,
     removeNote,
     convertNoteToSource
   } = useNotesStore()
@@ -333,6 +334,24 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     }
   }
 
+  const updateNote = async (noteId: string, note: Omit<Note, "id" | "createdAt">) => {
+    try {
+      await updateNoteAsync(noteId, note)
+
+      toast({
+        title: "Note updated",
+        description: "Your note has been successfully updated.",
+      })
+    } catch (error) {
+      console.error("Error updating note:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update note. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const deleteNote = async (noteId: string) => {
     try {
       await removeNote(noteId)
@@ -512,6 +531,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         <StudioPanel
           notes={notes}
           onAddNote={addNote}
+          onUpdateNote={updateNote}
           onDeleteNote={deleteNote}
           onConvertToSource={handleConvertNoteToSource}
           documents={documents.filter((doc) => doc.selected)}
