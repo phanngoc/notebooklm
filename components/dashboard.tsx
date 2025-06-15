@@ -316,7 +316,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     try {
       // Get selected source IDs
       const selectedSourceIds = documents.filter((doc) => doc.selected).map((doc) => doc.id)
-      
+      console.log("addNote:Selected source IDs:", selectedSourceIds)
       await createNote(note, projectId, selectedSourceIds)
 
       toast({

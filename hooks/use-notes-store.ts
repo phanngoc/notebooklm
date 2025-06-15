@@ -72,7 +72,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   createNote: async (note: Omit<Note, "id" | "createdAt">, projectId: string, selectedSourceIds: string[] = []) => {
     try {
       set({ isLoading: true, error: null })
-      
+      console.log("createNote:", note, projectId, selectedSourceIds)
       const response = await fetch('/api/notes', {
         method: 'POST',
         headers: {

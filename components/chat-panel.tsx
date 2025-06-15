@@ -47,7 +47,7 @@ export function ChatPanel({ messages, documents, onSendMessage, isLoading, onNew
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-white">
+    <div className="flex-1 flex flex-col bg-white h-full">
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Chat</h2>

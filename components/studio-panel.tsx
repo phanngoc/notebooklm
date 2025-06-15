@@ -47,9 +47,17 @@ export function StudioPanel({ notes, onAddNote, onDeleteNote, onConvertToSource,
 
   const handleAddNote = () => {
     console.log("Adding note:", noteTitle, noteContent)
-    if (noteTitle.trim() && noteContent.trim()) {
+    // if noteTitle.trim() empty will cut 20 words from content to assign noteTitle
+    let noteTitleSaved = noteTitle
+    if (!noteTitle.trim()) {
+      const words = noteContent.split(" ").slice(0, 20).join(" ")
+      setNoteTitle(words)
+      noteTitleSaved = words
+    }
+
+    if (noteContent.trim()) {
       onAddNote({
-        title: noteTitle,
+        title: noteTitleSaved,
         content: noteContent,
       })
       setNoteTitle("")
