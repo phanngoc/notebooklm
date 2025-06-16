@@ -6,6 +6,7 @@ import { SourcesPanel } from "@/components/sources-panel"
 import { ChatPanel } from "@/components/chat-panel"
 import { StudioPanel } from "@/components/studio-panel"
 import { useToast } from "@/hooks/use-toast"
+import { useNotesStore } from "@/hooks/use-notes-store"
 import type { Document, ChatMessage, Note } from "@/types"
 import { Loader2, LogOut, User, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -22,13 +23,36 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
   const { logout } = useAuth()
   const [documents, setDocuments] = useState<Document[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [notes, setNotes] = useState<Note[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const { toast } = useToast()
   const [userName, setUserName] = useState<string>("")
   const [projectName, setProjectName] = useState<string>("")
+  const [isStudioExpanded, setIsStudioExpanded] = useState(false)
+  
+  // Use Zustand store for notes
+  const { 
+    notes, 
+    isLoading: notesLoading,
+    error: notesError,
+    fetchNotes,
+    createNote,
+    updateNoteAsync,
+    removeNote,
+    convertNoteToSource
+  } = useNotesStore()
+
+  // Handle notes errors
+  useEffect(() => {
+    if (notesError) {
+      toast({
+        title: "Error",
+        description: notesError,
+        variant: "destructive",
+      })
+    }
+  }, [notesError, toast])
 
   useEffect(() => {
     if (userId && projectId) {
@@ -59,27 +83,27 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         setProjectName(project.name || "Untitled Project")
       }
 
-      // Fetch sources, notes, and chat sessions in parallel
-      const [sourcesResponse, notesResponse, sessionsResponse] = await Promise.all([
+      // Fetch sources and chat sessions, but use Zustand for notes
+      const [sourcesResponse, sessionsResponse] = await Promise.all([
         fetch(`/api/sources?projectId=${projectId}`),
-        fetch(`/api/notes?projectId=${projectId}`),
         fetch(`/api/chat/sessions/list?projectId=${projectId}`),
       ])
 
-      if (!sourcesResponse.ok || !notesResponse.ok || !sessionsResponse.ok) {
+      if (!sourcesResponse.ok || !sessionsResponse.ok) {
         throw new Error("Failed to fetch user data")
       }
 
-      const [sources, notes, sessions] = await Promise.all([
+      const [sources, sessions] = await Promise.all([
         sourcesResponse.json(),
-        notesResponse.json(),
         sessionsResponse.json(),
       ])
+
+      // Fetch notes using Zustand store
+      await fetchNotes(projectId)
 
       console.log("Loaded data:", { sources: sources.length, notes: notes.length, sessions: sessions.length })
 
       setDocuments(sources)
-      setNotes(notes)
 
       // Create a new chat session if none exists
       if (sessions.length === 0) {
@@ -291,28 +315,10 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
 
   const addNote = async (note: Omit<Note, "id" | "createdAt">) => {
     try {
-      setIsLoading(true)
-
       // Get selected source IDs
       const selectedSourceIds = documents.filter((doc) => doc.selected).map((doc) => doc.id)
-
-      // Add note to database via API
-      const response = await fetch("/api/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note, sourceIds: selectedSourceIds, projectId }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to save note")
-      }
-
-      // Reload notes
-      const notesResponse = await fetch(`/api/notes?projectId=${projectId}`)
-      if (notesResponse.ok) {
-        const updatedNotes = await notesResponse.json()
-        setNotes(updatedNotes)
-      }
+      console.log("addNote:Selected source IDs:", selectedSourceIds)
+      await createNote(note, projectId, selectedSourceIds)
 
       toast({
         title: "Note added",
@@ -325,26 +331,30 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         description: "Failed to save note. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
+    }
+  }
+
+  const updateNote = async (noteId: string, note: Omit<Note, "id" | "createdAt">) => {
+    try {
+      await updateNoteAsync(noteId, note)
+
+      toast({
+        title: "Note updated",
+        description: "Your note has been successfully updated.",
+      })
+    } catch (error) {
+      console.error("Error updating note:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update note. Please try again.",
+        variant: "destructive",
+      })
     }
   }
 
   const deleteNote = async (noteId: string) => {
     try {
-      setIsLoading(true)
-
-      // Delete note from database via API
-      const response = await fetch(`/api/notes/${noteId}`, {
-        method: "DELETE",
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to delete note")
-      }
-
-      // Update local state
-      setNotes((prev) => prev.filter((note) => note.id !== noteId))
+      await removeNote(noteId)
 
       toast({
         title: "Note deleted",
@@ -357,8 +367,39 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         description: "Failed to delete note. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
+    }
+  }
+
+  const handleConvertNoteToSource = async (noteId: string) => {
+    try {
+      await convertNoteToSource(noteId, projectId)
+
+      // Reload documents to include the new source
+      await fetchDocuments()
+
+      toast({
+        title: "Note converted to source",
+        description: "Your note has been successfully converted to a source.",
+      })
+    } catch (error) {
+      console.error("Error converting note to source:", error)
+      toast({
+        title: "Error",
+        description: "Failed to convert note to source. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const fetchDocuments = async () => {
+    try {
+      const response = await fetch(`/api/sources?projectId=${projectId}`)
+      if (response.ok) {
+        const sources = await response.json()
+        setDocuments(sources)
+      }
+    } catch (error) {
+      console.error("Error fetching documents:", error)
     }
   }
 
@@ -467,7 +508,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1">
         <SourcesPanel
           documents={documents}
           onAddDocument={addDocument}
@@ -476,21 +517,28 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           isLoading={isLoading}
         />
 
-        <ChatPanel
-          messages={messages}
-          documents={documents.filter((doc) => doc.selected)}
-          onSendMessage={sendMessage}
-          isLoading={isLoading}
-          onNewChat={createNewChatSession}
-          sessionId={currentSessionId}
-        />
+        <div className={`transition-all duration-300 ${isStudioExpanded ? 'flex-1' : 'flex-1'}`}>
+          <ChatPanel
+            messages={messages}
+            documents={documents.filter((doc) => doc.selected)}
+            onSendMessage={sendMessage}
+            isLoading={isLoading}
+            onNewChat={createNewChatSession}
+            sessionId={currentSessionId}
+          />
+        </div>
 
         <StudioPanel
           notes={notes}
           onAddNote={addNote}
+          onUpdateNote={updateNote}
           onDeleteNote={deleteNote}
+          onConvertToSource={handleConvertNoteToSource}
           documents={documents.filter((doc) => doc.selected)}
-          isLoading={isLoading}
+          isLoading={isLoading || notesLoading}
+          projectId={projectId}
+          isExpanded={isStudioExpanded}
+          onExpandedChange={setIsStudioExpanded}
         />
       </div>
     </div>
