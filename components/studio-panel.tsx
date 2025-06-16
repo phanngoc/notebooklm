@@ -181,17 +181,17 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
   }
 
   return (
-    <div className={`bg-white border-l border-gray-200 flex flex-col transition-all duration-300 ${isExpanded ? 'w-496' : 'w-80'}`}>
-      <div className="p-4 border-b border-gray-200">
+    <div className={`bg-white border-l border-gray-200 flex flex-col transition-all duration-300 ${isExpanded ? 'w-496' : 'w-80'} h-full`}>
+      <div className="p-4 border-b border-gray-200 flex-shrink-0 h-full flex flex-col">
         <h2 className="text-lg font-semibold mb-4">Studio</h2>
 
-        <Tabs defaultValue="notes" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs defaultValue="notes" className="w-full h-full flex flex-col">
+          <TabsList className="grid w-full grid-cols-2 flex-shrink-0">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-4">
+          <TabsContent value="overview" className="space-y-4 flex-1 overflow-y-auto">
             <Card className="p-4">
               <div className="flex items-center gap-3 mb-3">
                 <Headphones className="w-5 h-5 text-blue-600" />
@@ -226,8 +226,8 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
             </Card>
           </TabsContent>
 
-          <TabsContent value="notes" className="space-y-4">
-            <div className="flex items-center justify-between">
+          <TabsContent value="notes" className={`${isAddingNote ? 'flex flex-col h-full' : 'space-y-4'}`}>
+            <div className="flex items-center justify-between flex-shrink-0">
               <h3 className="font-medium">Your Notes</h3>
               <Button size="sm" onClick={handleToggleAddNote} disabled={isLoading}>
                 <Plus className="w-4 h-4" />
@@ -235,11 +235,23 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
             </div>
 
             {isAddingNote && (
-              <Card className="p-4">
-                <div className="space-y-3">
-                  <Input placeholder="Note title" value={noteTitle} onChange={(e) => setNoteTitle(e.target.value)} />
-                  <EditorComp markdown={noteContent} onChange={setNoteContent} imageUploadHandler={imageUploadHandler}  />
-                  <div className="flex gap-2">
+              <Card className="p-4 flex flex-col flex-1 min-h-0">
+                <div className="flex flex-col gap-3 h-full">
+                  <Input 
+                    placeholder="Note title" 
+                    value={noteTitle} 
+                    onChange={(e) => setNoteTitle(e.target.value)}
+                    className="flex-shrink-0"
+                  />
+                  <div className="flex-1 min-h-0">
+                    <EditorComp 
+                      markdown={noteContent} 
+                      onChange={setNoteContent} 
+                      imageUploadHandler={imageUploadHandler}
+                      className="h-full"
+                    />
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
                     <Button onClick={handleSaveNote} size="sm" disabled={isLoading}>
                       {editingNoteId ? "Update" : "Save"}
                     </Button>
@@ -251,63 +263,65 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
               </Card>
             )}
 
-            <div className="space-y-2">
-              {!isAddingNote && notes.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No notes yet. Create your first note!</p>
-              ) : !isAddingNote ? (
-                notes.map((note) => (
-                  <Card 
-                    key={note.id} 
-                    className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={() => handleEditNote(note)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-medium text-sm mb-1">{note.title}</h4>
-                        <p className="text-xs text-gray-600 line-clamp-3 mb-2">{note.content}</p>
-                        <div className="flex items-center gap-1 text-xs text-gray-400">
-                          <Clock className="w-3 h-3" />
-                            {new Date(note.createdAt).toLocaleString(undefined, {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            })}
+            {!isAddingNote && (
+              <div className="space-y-2 overflow-y-auto">
+                {notes.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">No notes yet. Create your first note!</p>
+                ) : (
+                  notes.map((note) => (
+                    <Card 
+                      key={note.id} 
+                      className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                      onClick={() => handleEditNote(note)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-sm mb-1">{note.title}</h4>
+                          <p className="text-xs text-gray-600 line-clamp-3 mb-2">{note.content}</p>
+                          <div className="flex items-center gap-1 text-xs text-gray-400">
+                            <Clock className="w-3 h-3" />
+                              {new Date(note.createdAt).toLocaleString(undefined, {
+                              year: "numeric",
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              })}
+                          </div>
+                          <div className="flex gap-1 mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation() // Prevent card click
+                                onConvertToSource(note.id)
+                              }}
+                              className="text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
+                              disabled={isLoading}
+                            >
+                              <FileUp className="w-3 h-3 mr-1" />
+                              Convert to Source
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex gap-1 mt-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.stopPropagation() // Prevent card click
-                              onConvertToSource(note.id)
-                            }}
-                            className="text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
-                            disabled={isLoading}
-                          >
-                            <FileUp className="w-3 h-3 mr-1" />
-                            Convert to Source
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation() // Prevent card click
+                            confirmDeleteNote(note.id)
+                          }}
+                          className="text-red-500 hover:text-red-700 ml-2"
+                          disabled={isLoading}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation() // Prevent card click
-                          confirmDeleteNote(note.id)
-                        }}
-                        className="text-red-500 hover:text-red-700 ml-2"
-                        disabled={isLoading}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </Card>
-                ))
-              ) : null}
-            </div>
+                    </Card>
+                  ))
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
