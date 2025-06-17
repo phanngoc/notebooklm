@@ -59,7 +59,7 @@ const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange, imageUploadHan
         const containerHeight = containerRef.current.offsetHeight;
         console.log('Container height:', containerHeight);
         // Trừ đi khoảng cách padding/margin nếu cần
-        const adjustedHeight = Math.max(containerHeight + 40, 300); // Min height 300px
+        const adjustedHeight = Math.max(containerHeight, 300); // Min height 300px
         console.log('Adjusted height:', adjustedHeight);
         setDynamicHeight(`${adjustedHeight}px`);
 
