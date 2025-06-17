@@ -366,7 +366,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         </div>
       </header>
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 min-h-[600px]">
         <SourcesPanel
           documents={documents}
           onAddDocument={addDocument}
