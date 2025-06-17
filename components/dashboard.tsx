@@ -6,7 +6,7 @@ import { SourcesPanel } from "@/components/sources-panel"
 import { ChatPanel } from "@/components/chat-panel"
 import { StudioPanel } from "@/components/studio-panel"
 import { useToast } from "@/hooks/use-toast"
-import { useNotesStore } from "@/hooks/use-notes-store"
+import { useAppStore } from "@/hooks/use-app-store"
 import type { Document, ChatMessage, Note } from "@/types"
 import { Loader2, LogOut, User, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -21,29 +21,66 @@ interface DashboardProps {
 export default function Dashboard({ userId, projectId, authLoading }: DashboardProps) {
   const router = useRouter()
   const { logout } = useAuth()
-  const [documents, setDocuments] = useState<Document[]>([])
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
   const [isInitializing, setIsInitializing] = useState(true)
   const { toast } = useToast()
   const [userName, setUserName] = useState<string>("")
   const [projectName, setProjectName] = useState<string>("")
   const [isStudioExpanded, setIsStudioExpanded] = useState(false)
   
-  // Use Zustand store for notes
-  const { 
-    notes, 
-    isLoading: notesLoading,
-    error: notesError,
-    fetchNotes,
-    createNote,
+  // Use unified Zustand store
+  const {
+    // Documents
+    documents,
+    documentsLoading,
+    documentsError,
+    toggleDocumentSelection,
+    addDocumentAsync,
+    removeDocumentAsync,
+    
+    // Sessions and messages
+    sessions,
+    currentSessionId,
+    messages,
+    sessionsLoading,
+    sessionsError,
+    createSessionAsync,
+    sendMessageAsync,
+    
+    // Notes
+    notes,
+    notesLoading,
+    notesError,
+    createNoteAsync,
     updateNoteAsync,
-    removeNote,
-    convertNoteToSource
-  } = useNotesStore()
+    removeNoteAsync,
+    convertNoteToSource,
+    
+    // General
+    isLoading,
+    initializeProject,
+  } = useAppStore()
 
-  // Handle notes errors
+  // Handle errors from store
+  useEffect(() => {
+    if (documentsError) {
+      toast({
+        title: "Error",
+        description: documentsError,
+        variant: "destructive",
+      })
+    }
+  }, [documentsError, toast])
+
+  useEffect(() => {
+    if (sessionsError) {
+      toast({
+        title: "Error",
+        description: sessionsError,
+        variant: "destructive",
+      })
+    }
+  }, [sessionsError, toast])
+
   useEffect(() => {
     if (notesError) {
       toast({
@@ -83,53 +120,10 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         setProjectName(project.name || "Untitled Project")
       }
 
-      // Fetch sources and chat sessions, but use Zustand for notes
-      const [sourcesResponse, sessionsResponse] = await Promise.all([
-        fetch(`/api/sources?projectId=${projectId}`),
-        fetch(`/api/chat/sessions/list?projectId=${projectId}`),
-      ])
+      // Initialize all project data using the unified store
+      await initializeProject(projectId, userId)
 
-      if (!sourcesResponse.ok || !sessionsResponse.ok) {
-        throw new Error("Failed to fetch user data")
-      }
-
-      const [sources, sessions] = await Promise.all([
-        sourcesResponse.json(),
-        sessionsResponse.json(),
-      ])
-
-      // Fetch notes using Zustand store
-      await fetchNotes(projectId)
-
-      console.log("Loaded data:", { sources: sources.length, notes: notes.length, sessions: sessions.length })
-
-      setDocuments(sources)
-
-      // Create a new chat session if none exists
-      if (sessions.length === 0) {
-        console.log("Creating new chat session")
-        const createResponse = await fetch("/api/chat/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "New Chat", projectId }),
-        })
-        if (!createResponse.ok) {
-          throw new Error("Failed to create chat session")
-        }
-        const newSession = await createResponse.json()
-        setCurrentSessionId(newSession.id)
-        setMessages([])
-      } else {
-        // Load the most recent chat session
-        const latestSession = sessions[0]
-        console.log("Loading latest session:", latestSession.id)
-        setCurrentSessionId(latestSession.id)
-        const messagesResponse = await fetch(`/api/chat/sessions/${latestSession.id}/messages`)
-        if (messagesResponse.ok) {
-          const messages = await messagesResponse.json()
-          setMessages(messages)
-        }
-      }
+      console.log("Loaded data:", { sources: documents.length, notes: notes.length, sessions: sessions.length })
     } catch (error) {
       console.error("Error loading user data:", error)
       toast({
@@ -144,45 +138,16 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
 
   const addDocument = async (doc: Omit<Document, "id" | "createdAt" | "selected">) => {
     try {
-      setIsLoading(true)
       toast({
         title: "Processing document",
         description: "Please wait while we process your document...",
       })
 
-      // Process document with vector embeddings via API
-      const response = await fetch("/api/documents/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...doc,
-          userId,
-          projectId,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to process document")
-      }
-
-      const result = await response.json()
-
-      // Reload sources
-      const sourcesResponse = await fetch(`/api/sources?projectId=${projectId}`)
-      if (sourcesResponse.ok) {
-        const sources = await sourcesResponse.json()
-        setDocuments(
-          sources.map((s: any) => ({
-            ...s,
-            selected: s.id === result.sourceId ? true : false,
-          })),
-        )
-      }
+      await addDocumentAsync(doc, userId!, projectId)
 
       toast({
         title: "Document added",
-        description: `Your document has been successfully processed into ${result.chunksProcessed} chunks.`,
+        description: "Your document has been successfully processed.",
       })
     } catch (error) {
       console.error("Error adding document:", error)
@@ -191,30 +156,12 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         description: error instanceof Error ? error.message : "Failed to process document. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
-  }
-
-  const toggleDocumentSelection = (id: string) => {
-    setDocuments((prev) => prev.map((doc) => (doc.id === id ? { ...doc, selected: !doc.selected } : doc)))
   }
 
   const removeDocument = async (id: string) => {
     try {
-      setIsLoading(true)
-
-      // Delete document via API
-      const response = await fetch(`/api/documents/${id}`, {
-        method: "DELETE",
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to delete document")
-      }
-
-      // Update local state
-      setDocuments((prev) => prev.filter((doc) => doc.id !== id))
+      await removeDocumentAsync(id)
 
       toast({
         title: "Document removed",
@@ -227,8 +174,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         description: "Failed to remove document. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -246,70 +191,15 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     }
 
     try {
-      setIsLoading(true)
-
-      // Add user message to local state immediately for better UX
-      const userMessageLocal: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content,
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, userMessageLocal])
-
-      // Send to chat API
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: content,
-          sourceIds: selectedSources.map((doc) => doc.id),
-          sessionId: currentSessionId,
-          projectId,
-        }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to get AI response")
-      }
-
-      const result = await response.json()
-
-      // Add AI response to local state
-      const aiMessageLocal: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: result.response,
-        timestamp: new Date(),
-        sources: result.sources,
-      }
-      setMessages((prev) => [...prev, aiMessageLocal])
-
-      // Reload messages from database to ensure consistency
-      const messagesResponse = await fetch(`/api/chat/sessions/${currentSessionId}/messages`)
-      if (messagesResponse.ok) {
-        const updatedMessages = await messagesResponse.json()
-        setMessages(updatedMessages)
-      }
+      const selectedSourceIds = selectedSources.map((doc) => doc.id)
+      await sendMessageAsync(content, selectedSourceIds, currentSessionId, projectId)
     } catch (error) {
       console.error("Error sending message:", error)
-
-      // Add error message to local state
-      const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "Sorry, I encountered an error while processing your request.",
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, errorMessage])
-
       toast({
         title: "Error",
         description: "Failed to get a response. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -318,7 +208,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
       // Get selected source IDs
       const selectedSourceIds = documents.filter((doc) => doc.selected).map((doc) => doc.id)
       console.log("addNote:Selected source IDs:", selectedSourceIds)
-      await createNote(note, projectId, selectedSourceIds)
+      await createNoteAsync(note, projectId, selectedSourceIds)
 
       toast({
         title: "Note added",
@@ -354,7 +244,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
 
   const deleteNote = async (noteId: string) => {
     try {
-      await removeNote(noteId)
+      await removeNoteAsync(noteId)
 
       toast({
         title: "Note deleted",
@@ -374,9 +264,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     try {
       await convertNoteToSource(noteId, projectId)
 
-      // Reload documents to include the new source
-      await fetchDocuments()
-
       toast({
         title: "Note converted to source",
         description: "Your note has been successfully converted to a source.",
@@ -391,36 +278,9 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     }
   }
 
-  const fetchDocuments = async () => {
-    try {
-      const response = await fetch(`/api/sources?projectId=${projectId}`)
-      if (response.ok) {
-        const sources = await response.json()
-        setDocuments(sources)
-      }
-    } catch (error) {
-      console.error("Error fetching documents:", error)
-    }
-  }
-
   const createNewChatSession = async () => {
     try {
-      setIsLoading(true)
-
-      // Create new chat session
-      const createResponse = await fetch("/api/chat/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "New Chat", projectId }),
-      })
-      if (!createResponse.ok) {
-        throw new Error("Failed to create chat session")
-      }
-      const newSession = await createResponse.json()
-
-      // Update state
-      setCurrentSessionId(newSession.id)
-      setMessages([])
+      await createSessionAsync("New Chat", projectId)
 
       toast({
         title: "New chat created",
@@ -433,8 +293,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         description: "Failed to create new chat. Please try again.",
         variant: "destructive",
       })
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -514,7 +372,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           onAddDocument={addDocument}
           onToggleSelection={toggleDocumentSelection}
           onRemoveDocument={removeDocument}
-          isLoading={isLoading}
+          isLoading={documentsLoading || isLoading}
         />
 
         <div className={`transition-all duration-300 ${isStudioExpanded ? 'flex-1' : 'flex-1'}`}>
@@ -522,7 +380,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
             messages={messages}
             documents={documents.filter((doc) => doc.selected)}
             onSendMessage={sendMessage}
-            isLoading={isLoading}
+            isLoading={sessionsLoading || isLoading}
             onNewChat={createNewChatSession}
             sessionId={currentSessionId}
           />
@@ -535,7 +393,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           onDeleteNote={deleteNote}
           onConvertToSource={handleConvertNoteToSource}
           documents={documents.filter((doc) => doc.selected)}
-          isLoading={isLoading || notesLoading}
+          isLoading={notesLoading || isLoading}
           projectId={projectId}
           isExpanded={isStudioExpanded}
           onExpandedChange={setIsStudioExpanded}
