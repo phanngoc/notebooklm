@@ -6,14 +6,13 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Checkbox } from "@/components/ui/checkbox"
 import type { Document } from "@/types"
 import { FileText, Globe, Type, Trash2, Plus } from "lucide-react"
 
 interface SourcesPanelProps {
   documents: Document[]
   onAddDocument: (doc: Omit<Document, "id" | "createdAt" | "selected">) => void
-  onToggleSelection: (id: string) => void
+  onToggleSelection?: (id: string) => void
   onRemoveDocument: (id: string) => void
   isLoading?: boolean
 }
@@ -37,7 +36,6 @@ export function SourcesPanel({
         type: "website",
         content: `Content from: ${urlInput}`,
         url: urlInput,
-        selected: true,
       })
       setUrlInput("")
       setTitleInput("")
@@ -51,7 +49,6 @@ export function SourcesPanel({
         title: titleInput || "Pasted Text",
         type: "text",
         content: textInput,
-        selected: true,
       })
       setTextInput("")
       setTitleInput("")
@@ -133,7 +130,6 @@ export function SourcesPanel({
           {documents.map((doc) => (
             <Card key={doc.id} className="p-3 hover:bg-gray-50">
               <div className="flex items-start gap-3">
-                <Checkbox checked={doc.selected} onCheckedChange={() => onToggleSelection(doc.id)} className="mt-1" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     {getIcon(doc.type)}
