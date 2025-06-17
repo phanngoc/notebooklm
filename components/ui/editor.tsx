@@ -101,43 +101,41 @@ const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange, imageUploadHan
 
   return (
     <div ref={containerRef} className={`w-full h-full overflow-y-auto`} style={{ height: dynamicHeight }}>
-      {!isFirstRender.current && (
-        <MDXEditor
-          className={`prose prose-invert min-w-full`}
-          contentEditableClassName="prose"
-          onChange={(e) => onChange && onChange(e)}
-          ref={editorRef}
-          markdown={markdown}
-          plugins={[
-            headingsPlugin(),
-            listsPlugin(),
-            quotePlugin(),
-            thematicBreakPlugin(),
-            markdownShortcutPlugin(),
-            tablePlugin(),
-            codeBlockPlugin({ defaultCodeBlockLanguage: 'js' }),
-            sandpackPlugin({ sandpackConfig: simpleSandpackConfig }),
-            codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', python: 'Python' } }),
-            imagePlugin({
-              imageUploadHandler: handleImageUpload,
-            }),
-            toolbarPlugin({
-              toolbarClassName: 'my-classname',
-              toolbarContents: () => (
-                <>
-                  <UndoRedo />
-                  <BoldItalicUnderlineToggles />
-                  <BlockTypeSelect />
-                  <CodeToggle />
-                  <InsertImage />
-                  <InsertTable />
-                  <InsertCodeBlock />
-                </>
-              )
-            })
-          ]}
-        />
-      )}
+      <MDXEditor
+        className={`prose prose-invert min-w-full`}
+        contentEditableClassName="prose"
+        onChange={(e) => onChange && onChange(e)}
+        ref={editorRef}
+        markdown={markdown}
+        plugins={[
+          headingsPlugin(),
+          listsPlugin(),
+          quotePlugin(),
+          thematicBreakPlugin(),
+          markdownShortcutPlugin(),
+          tablePlugin(),
+          codeBlockPlugin({ defaultCodeBlockLanguage: 'js' }),
+          sandpackPlugin({ sandpackConfig: simpleSandpackConfig }),
+          codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', python: 'Python' } }),
+          imagePlugin({
+            imageUploadHandler: handleImageUpload,
+          }),
+          toolbarPlugin({
+            toolbarClassName: 'my-classname',
+            toolbarContents: () => (
+              <>
+                <UndoRedo />
+                <BoldItalicUnderlineToggles />
+                <BlockTypeSelect />
+                <CodeToggle />
+                <InsertImage />
+                <InsertTable />
+                <InsertCodeBlock />
+              </>
+            )
+          })
+        ]}
+      />
     </div>
   );
 };

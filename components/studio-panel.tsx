@@ -21,8 +21,8 @@ import type { Document, Note } from "@/types"
 import { Plus, FileText, Headphones, BookOpen, Clock, Trash2, FileUp } from "lucide-react"
 import dynamic from 'next/dynamic'
 import { useNotesStore } from "@/hooks/use-notes-store"
+import Editor from "./ui/editor"
 
-const EditorComp = dynamic(() => import('./ui/editor'), { ssr: false })
 
 interface StudioPanelProps {
   notes: Note[]
@@ -226,8 +226,8 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
             </Card>
           </TabsContent>
 
-          <TabsContent value="notes" className={`${isAddingNote ? 'flex flex-col h-full' : 'space-y-4'}`}>
-            <div className="flex items-center justify-between flex-shrink-0">
+          <TabsContent value="notes" className={`${isAddingNote ? 'flex flex-col h-full' : 'flex flex-col h-full'}`}>
+            <div className="flex items-center justify-between flex-shrink-0 mb-4">
               <h3 className="font-medium">Your Notes</h3>
               <Button size="sm" onClick={handleToggleAddNote} disabled={isLoading}>
                 <Plus className="w-4 h-4" />
@@ -244,11 +244,10 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
                     className="flex-shrink-0"
                   />
                   <div className="flex-1 min-h-0">
-                    <EditorComp 
+                    <Editor 
                       markdown={noteContent} 
                       onChange={setNoteContent} 
                       imageUploadHandler={imageUploadHandler}
-                      className="h-full"
                     />
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
@@ -261,65 +260,67 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
                   </div>
                 </div>
               </Card>
-            )}
-
-            {!isAddingNote && (
-              <div className="space-y-2 overflow-y-auto">
-                {notes.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">No notes yet. Create your first note!</p>
-                ) : (
-                  notes.map((note) => (
-                    <Card 
-                      key={note.id} 
-                      className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                      onClick={() => handleEditNote(note)}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-sm mb-1">{note.title}</h4>
-                          <p className="text-xs text-gray-600 line-clamp-3 mb-2">{note.content}</p>
-                          <div className="flex items-center gap-1 text-xs text-gray-400">
-                            <Clock className="w-3 h-3" />
-                              {new Date(note.createdAt).toLocaleString(undefined, {
-                              year: "numeric",
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              })}
+            )}            {!isAddingNote && (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div 
+                  className="notes-scroll-area space-y-2 overflow-y-auto flex-1 min-h-[200px] max-h-[calc(100vh-230px)] pr-1"
+                >
+                  {notes.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-4">No notes yet. Create your first note!</p>
+                  ) : (
+                    notes.map((note) => (
+                      <Card 
+                        key={note.id} 
+                        className="p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => handleEditNote(note)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-medium text-sm mb-1">{note.title}</h4>
+                            <p className="text-xs text-gray-600 line-clamp-3 mb-2">{note.content}</p>
+                            <div className="flex items-center gap-1 text-xs text-gray-400">
+                              <Clock className="w-3 h-3" />
+                                {new Date(note.createdAt).toLocaleString(undefined, {
+                                year: "numeric",
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                })}
+                            </div>
+                            <div className="flex gap-1 mt-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation() // Prevent card click
+                                  onConvertToSource(note.id)
+                                }}
+                                className="text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
+                                disabled={isLoading}
+                              >
+                                <FileUp className="w-3 h-3 mr-1" />
+                                Convert to Source
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-1 mt-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation() // Prevent card click
-                                onConvertToSource(note.id)
-                              }}
-                              className="text-blue-600 hover:text-blue-700 border-blue-200 hover:border-blue-300"
-                              disabled={isLoading}
-                            >
-                              <FileUp className="w-3 h-3 mr-1" />
-                              Convert to Source
-                            </Button>
-                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation() // Prevent card click
+                              confirmDeleteNote(note.id)
+                            }}
+                            className="text-red-500 hover:text-red-700 ml-2"
+                            disabled={isLoading}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation() // Prevent card click
-                            confirmDeleteNote(note.id)
-                          }}
-                          className="text-red-500 hover:text-red-700 ml-2"
-                          disabled={isLoading}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </Card>
-                  ))
-                )}
+                      </Card>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </TabsContent>

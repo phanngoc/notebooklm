@@ -94,3 +94,32 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom scrollbar styles for notes panel */
+.notes-scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.notes-scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notes-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.notes-scroll-area::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 3px;
+  border: none;
+}
+
+.notes-scroll-area::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+/* Smooth scroll behavior */
+.notes-scroll-area {
+  scroll-behavior: smooth;
+}
