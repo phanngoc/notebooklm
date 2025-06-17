@@ -31,7 +31,7 @@ export function ChatPanel({ messages, documents, onSendMessage, isLoading, onNew
   }, [messages])
 
   const handleSend = async () => {
-    if (!input.trim() || documents.length === 0 || isLoading) return
+    if (!input.trim() || isLoading) return
 
     const userMessage = input.trim()
     setInput("")
@@ -56,7 +56,7 @@ export function ChatPanel({ messages, documents, onSendMessage, isLoading, onNew
               <Plus className="w-4 h-4 mr-2" />
               New Chat
             </Button>
-            <span className="text-sm text-gray-500">{documents.length} sources selected</span>
+            <span className="text-sm text-gray-500">{documents.length} sources available</span>
           </div>
         </div>
       </div>
@@ -128,7 +128,7 @@ export function ChatPanel({ messages, documents, onSendMessage, isLoading, onNew
           <Input
             placeholder={
               documents.length === 0
-                ? "Select documents first to start chatting..."
+                ? "Add documents first to start chatting..."
                 : "Ask a question about your documents..."
             }
             value={input}
@@ -143,7 +143,7 @@ export function ChatPanel({ messages, documents, onSendMessage, isLoading, onNew
         </div>
         {documents.length === 0 && (
           <p className="text-xs text-gray-500 mt-2">
-            Please select at least one document from the Sources panel to start chatting.
+            Please add at least one document from the Sources panel to start chatting.
           </p>
         )}
       </div>

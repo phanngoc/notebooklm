@@ -197,7 +197,7 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
                 <Headphones className="w-5 h-5 text-blue-600" />
                 <h3 className="font-medium">Audio Overview</h3>
               </div>
-              <p className="text-sm text-gray-600 mb-3">Generate an audio summary of your selected documents</p>
+              <p className="text-sm text-gray-600 mb-3">Generate an audio summary of your documents</p>
               <Button className="w-full" disabled={documents.length === 0 || isLoading}>
                 Generate Audio Overview
               </Button>
@@ -219,7 +219,7 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
                 <FileText className="w-5 h-5 text-purple-600" />
                 <h3 className="font-medium">Summary</h3>
               </div>
-              <p className="text-sm text-gray-600 mb-3">Get a concise summary of all selected documents</p>
+              <p className="text-sm text-gray-600 mb-3">Get a concise summary of all your documents</p>
               <Button variant="outline" className="w-full" disabled={documents.length === 0 || isLoading}>
                 Generate Summary
               </Button>

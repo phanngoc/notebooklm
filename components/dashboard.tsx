@@ -33,7 +33,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     documents,
     documentsLoading,
     documentsError,
-    toggleDocumentSelection,
     addDocumentAsync,
     removeDocumentAsync,
     
@@ -180,19 +179,20 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
   const sendMessage = async (content: string) => {
     if (!currentSessionId) return
 
-    const selectedSources = documents.filter((doc) => doc.selected)
-    if (selectedSources.length === 0) {
+    // Check if there are any documents available
+    if (documents.length === 0) {
       toast({
-        title: "No sources selected",
-        description: "Please select at least one document to chat with.",
+        title: "No sources available",
+        description: "Please add at least one document to chat with.",
         variant: "destructive",
       })
       return
     }
 
     try {
-      const selectedSourceIds = selectedSources.map((doc) => doc.id)
-      await sendMessageAsync(content, selectedSourceIds, currentSessionId, projectId)
+      // Use all documents instead of selected ones
+      const allSourceIds = documents.map((doc) => doc.id)
+      await sendMessageAsync(content, allSourceIds, currentSessionId, projectId)
     } catch (error) {
       console.error("Error sending message:", error)
       toast({
@@ -205,10 +205,10 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
 
   const addNote = async (note: Omit<Note, "id" | "createdAt">) => {
     try {
-      // Get selected source IDs
-      const selectedSourceIds = documents.filter((doc) => doc.selected).map((doc) => doc.id)
-      console.log("addNote:Selected source IDs:", selectedSourceIds)
-      await createNoteAsync(note, projectId, selectedSourceIds)
+      // Use all documents instead of selected ones
+      const allSourceIds = documents.map((doc) => doc.id)
+      console.log("addNote: All source IDs:", allSourceIds)
+      await createNoteAsync(note, projectId, allSourceIds)
 
       toast({
         title: "Note added",
@@ -370,7 +370,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         <SourcesPanel
           documents={documents}
           onAddDocument={addDocument}
-          onToggleSelection={toggleDocumentSelection}
           onRemoveDocument={removeDocument}
           isLoading={documentsLoading || isLoading}
         />
@@ -378,7 +377,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         <div className={`transition-all duration-300 ${isStudioExpanded ? 'flex-1' : 'flex-1'}`}>
           <ChatPanel
             messages={messages}
-            documents={documents.filter((doc) => doc.selected)}
+            documents={documents}
             onSendMessage={sendMessage}
             isLoading={sessionsLoading || isLoading}
             onNewChat={createNewChatSession}
@@ -392,7 +391,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           onUpdateNote={updateNote}
           onDeleteNote={deleteNote}
           onConvertToSource={handleConvertNoteToSource}
-          documents={documents.filter((doc) => doc.selected)}
+          documents={documents}
           isLoading={notesLoading || isLoading}
           projectId={projectId}
           isExpanded={isStudioExpanded}
