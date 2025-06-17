@@ -11,7 +11,11 @@ import { MDXEditor, headingsPlugin,
   type MDXEditorProps,
   toolbarPlugin,
   UndoRedo, BoldItalicUnderlineToggles, BlockTypeSelect,
-  CodeToggle, InsertImage, InsertTable
+  CodeToggle, InsertImage, InsertTable, InsertCodeBlock,
+  SandpackConfig,
+  sandpackPlugin,
+  codeBlockPlugin,
+  codeMirrorPlugin
  } from "@mdxeditor/editor";
 
 import { FC, useEffect, useRef, useState } from "react";
@@ -23,6 +27,21 @@ interface EditorProps {
   editorRef?: React.MutableRefObject<MDXEditorMethods | null>;
   onChange?: (markdown: string) => void;
   imageUploadHandler?: (image: File) => Promise<string>;
+}
+
+const simpleSandpackConfig: SandpackConfig = {
+  defaultPreset: 'react',
+  presets: [
+    {
+      label: 'React',
+      name: 'react',
+      meta: 'live react',
+      sandpackTemplate: 'react',
+      sandpackTheme: 'light',
+      snippetFileName: '/App.js',
+      snippetLanguage: 'jsx',
+    }
+  ]
 }
 
 /**
@@ -96,6 +115,9 @@ const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange, imageUploadHan
             thematicBreakPlugin(),
             markdownShortcutPlugin(),
             tablePlugin(),
+            codeBlockPlugin({ defaultCodeBlockLanguage: 'js' }),
+            sandpackPlugin({ sandpackConfig: simpleSandpackConfig }),
+            codeMirrorPlugin({ codeBlockLanguages: { js: 'JavaScript', css: 'CSS', python: 'Python' } }),
             imagePlugin({
               imageUploadHandler: handleImageUpload,
             }),
@@ -109,6 +131,7 @@ const Editor: FC<EditorProps> = ({ markdown, editorRef, onChange, imageUploadHan
                   <CodeToggle />
                   <InsertImage />
                   <InsertTable />
+                  <InsertCodeBlock />
                 </>
               )
             })

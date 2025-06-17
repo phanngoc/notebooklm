@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+const { fontFamily } = require("tailwindcss/defaultTheme");
 
 const config: Config = {
     darkMode: ["class"],
@@ -88,7 +89,26 @@ const config: Config = {
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out'
-  		}
+  		},
+		typography: {
+			DEFAULT: {
+				css: {
+					table: {
+						width: '100%',
+						tableLayout: 'auto',
+					},
+					'th, td': {
+						padding: '0rem',
+						borderWidth: '1px',
+						paddingTop: '2px',
+						overflow: 'hidden',
+						textOverflow: 'ellipsis',
+						whiteSpace: 'nowrap',
+						verticalAlign: 'top',
+					}
+				}
+			}
+      	}
   	}
   },
   plugins: [require("tailwindcss-animate"), require('@tailwindcss/typography')],
