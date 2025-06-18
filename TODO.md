@@ -1,6 +1,7 @@
 
 ## editor: hỗ trợ hiển thị math
 
+## Hỗ trợ upload file subapass blob
 
 ## Khi tạo project => upload 1 note đầu tiên => phân tích content 
 để đưa ra nội dung DOMAIN + ENTITY phù hợp.

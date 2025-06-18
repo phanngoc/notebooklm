@@ -21,7 +21,7 @@ import type { Document, Note } from "@/types"
 import { Plus, FileText, Headphones, BookOpen, Clock, Trash2, FileUp } from "lucide-react"
 import dynamic from 'next/dynamic'
 import { useNotesStore } from "@/hooks/use-notes-store"
-import Editor from "./ui/editor"
+import Editor from "./ui/simple-editor"
 
 
 interface StudioPanelProps {
