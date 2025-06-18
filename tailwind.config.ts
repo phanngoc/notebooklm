@@ -105,7 +105,11 @@ const config: Config = {
 						textOverflow: 'ellipsis',
 						whiteSpace: 'nowrap',
 						verticalAlign: 'top',
-					}
+					},
+					'hr': {
+						marginTop: '0em',
+						marginBottom: '1em',
+					},
 				}
 			}
       	}
