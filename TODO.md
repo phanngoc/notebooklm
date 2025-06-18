@@ -1,6 +1,5 @@
 
-## Tích hợp markdown: 
-https://github.com/mdx-editor/editor
+## editor: hỗ trợ hiển thị math
 
 
 ## Khi tạo project => upload 1 note đầu tiên => phân tích content 
@@ -42,4 +41,6 @@ https://reactflow.dev/
 https://github.com/mendableai/firecrawl?tab=readme-ov-file
 
 ## Tích hợp break task cho estimation.
+
+
 
