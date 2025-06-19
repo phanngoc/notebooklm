@@ -22,6 +22,10 @@ interface AppState {
   // General loading state
   isLoading: boolean
   
+  // Project and user state
+  projectName: string
+  userName: string
+  
   // Sources actions
   setDocuments: (documents: Document[]) => void
   addDocument: (document: Document) => void
@@ -49,6 +53,11 @@ interface AppState {
   
   // General actions
   setLoading: (loading: boolean) => void
+  
+  // Project and user actions
+  setProjectName: (name: string) => void
+  setUserName: (name: string) => void
+  navigateBack: (router?: any) => void
   
   // Async actions
   fetchDocuments: (projectId: string) => Promise<void>
@@ -88,6 +97,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   notesError: null,
   
   isLoading: false,
+  
+  // Project and user state
+  projectName: "",
+  userName: "",
 
   // Sources actions
   setDocuments: (documents) => set({ documents }),
@@ -149,6 +162,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // General actions
   setLoading: (loading) => set({ isLoading: loading }),
+
+  // Project and user actions
+  setProjectName: (name) => set({ projectName: name }),
+  setUserName: (name) => set({ userName: name }),
+  navigateBack: (router) => {
+    // Use router if provided, otherwise fallback to window.history
+    if (router) {
+      router.back()
+    } else if (typeof window !== 'undefined') {
+      window.history.back()
+    }
+  },
 
   // Async actions for documents
   fetchDocuments: async (projectId: string) => {

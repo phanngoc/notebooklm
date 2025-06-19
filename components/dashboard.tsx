@@ -23,8 +23,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
   const { logout } = useAuth()
   const [isInitializing, setIsInitializing] = useState(true)
   const { toast } = useToast()
-  const [userName, setUserName] = useState<string>("")
-  const [projectName, setProjectName] = useState<string>("")
   const [isStudioExpanded, setIsStudioExpanded] = useState(false)
   
   // Use unified Zustand store
@@ -53,6 +51,12 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     updateNoteAsync,
     removeNoteAsync,
     convertNoteToSource,
+    
+    // Project and user info
+    projectName,
+    userName,
+    setProjectName,
+    setUserName,
     
     // General
     isLoading,
@@ -332,72 +336,37 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
 
   // Main application interface
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 py-2 px-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleBackToProjects}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Projects
-            </Button>
-            <h1 className="text-xl font-bold">NotebookLLM</h1>
-            {projectName && (
-              <div className="text-gray-500">
-                <span className="text-sm">•</span>
-                <span className="text-sm ml-2">{projectName}</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4" />
-              <span className="text-sm">{userName}</span>
-            </div>
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign out
-            </Button>
-          </div>
-        </div>
-      </header>
+    <div className="flex flex-1 min-h-[600px]">
+      <SourcesPanel
+        documents={documents}
+        onAddDocument={addDocument}
+        onRemoveDocument={removeDocument}
+        isLoading={documentsLoading || isLoading}
+      />
 
-      <div className="flex flex-1 min-h-[600px]">
-        <SourcesPanel
+      <div className={`transition-all duration-300 flex-1 ${!isStudioExpanded ? 'min-w-[600px]' : 'min-w-[400px]'}`}>
+        <ChatPanel
+          messages={messages}
           documents={documents}
-          onAddDocument={addDocument}
-          onRemoveDocument={removeDocument}
-          isLoading={documentsLoading || isLoading}
-        />
-
-        <div className={`transition-all duration-300 flex-1 ${!isStudioExpanded ? 'min-w-[600px]' : 'min-w-[400px]'}`}>
-          <ChatPanel
-            messages={messages}
-            documents={documents}
-            onSendMessage={sendMessage}
-            isLoading={sessionsLoading || isLoading}
-            onNewChat={createNewChatSession}
-            sessionId={currentSessionId}
-          />
-        </div>
-
-        <StudioPanel
-          notes={notes}
-          onAddNote={addNote}
-          onUpdateNote={updateNote}
-          onDeleteNote={deleteNote}
-          onConvertToSource={handleConvertNoteToSource}
-          documents={documents}
-          isLoading={notesLoading || isLoading}
-          projectId={projectId}
-          isExpanded={isStudioExpanded}
-          onExpandedChange={setIsStudioExpanded}
+          onSendMessage={sendMessage}
+          isLoading={sessionsLoading || isLoading}
+          onNewChat={createNewChatSession}
+          sessionId={currentSessionId}
         />
       </div>
+
+      <StudioPanel
+        notes={notes}
+        onAddNote={addNote}
+        onUpdateNote={updateNote}
+        onDeleteNote={deleteNote}
+        onConvertToSource={handleConvertNoteToSource}
+        documents={documents}
+        isLoading={notesLoading || isLoading}
+        projectId={projectId}
+        isExpanded={isStudioExpanded}
+        onExpandedChange={setIsStudioExpanded}
+      />
     </div>
   )
 }
