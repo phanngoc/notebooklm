@@ -82,16 +82,15 @@ const Code = ({ inline, children = [], className, ...props }) => {
  */
 const Editor: FC<EditorProps> = ({ markdown, onChange, imageUploadHandler }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dynamicHeight, setDynamicHeight] = useState<string>('650px');
+  const [dynamicHeight, setDynamicHeight] = useState<string>('');
   let isFirstRender = useRef(true);
   useEffect(() => {
     const calculateHeight = () => {
       console.log('Calculating dynamic height...', containerRef.current, isFirstRender.current);
       if (containerRef.current && isFirstRender.current === true) {
         const containerHeight = containerRef.current.offsetHeight;
-        console.log('Container height:', containerHeight);
         // Trừ đi khoảng cách padding/margin nếu cần
-        const adjustedHeight = Math.max(containerHeight, 300); // Min height 300px
+        const adjustedHeight = Math.max(containerHeight - 70, 300); // Min height 300px
         console.log('Adjusted height:', adjustedHeight);
         setDynamicHeight(`${adjustedHeight}px`);
 
@@ -136,6 +135,7 @@ const Editor: FC<EditorProps> = ({ markdown, onChange, imageUploadHandler }) => 
       <MDEditor
           value={markdown}
           onChange={(e) => onChange && onChange(e)}
+          preview="edit"
           height={dynamicHeight}
           previewOptions={{
             components: {
