@@ -374,7 +374,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
           isLoading={documentsLoading || isLoading}
         />
 
-        <div className={`transition-all duration-300 ${isStudioExpanded ? 'flex-1' : 'flex-1'}`}>
+        <div className={`transition-all duration-300 flex-1 ${!isStudioExpanded ? 'min-w-[600px]' : 'min-w-[400px]'}`}>
           <ChatPanel
             messages={messages}
             documents={documents}

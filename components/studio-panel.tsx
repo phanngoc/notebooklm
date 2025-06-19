@@ -181,7 +181,7 @@ export function StudioPanel({ notes, onAddNote, onUpdateNote, onDeleteNote, onCo
   }
 
   return (
-    <div className={`bg-white border-l border-gray-200 flex flex-col transition-all duration-300 ${isExpanded ? 'w-496' : 'w-80'} h-full`}>
+    <div className={`bg-white border-l border-gray-200 flex flex-col transition-all duration-300 ${isExpanded ? 'min-w-[600px]' : 'w-150'} h-full`}>
       <div className="p-4 border-b border-gray-200 flex-shrink-0 h-full flex flex-col">
         <h2 className="text-lg font-semibold mb-4">Studio</h2>
 
