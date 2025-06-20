@@ -78,6 +78,30 @@ export class DatabaseService {
     }
   }
 
+  async updateProject(projectId: string, userId: string, updates: { name?: string; description?: string }) {
+    try {
+      const { data, error } = await this.supabase
+        .from("projects")
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", projectId)
+        .eq("user_id", userId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error updating project:", error)
+        throw error
+      }
+      return data
+    } catch (error) {
+      console.error("Error updating project:", error)
+      throw error
+    }
+  }
+
   // Sources operations
   async getSources(userId: string, projectId?: string): Promise<Document[]> {
     try {
@@ -108,6 +132,27 @@ export class DatabaseService {
       }))
     } catch (error) {
       console.error("Error fetching sources:", error)
+      throw error
+    }
+  }
+
+  async isFirstSourceInProject(userId: string, projectId: string): Promise<boolean> {
+    try {
+      const { data, error } = await this.supabase
+        .from("sources")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("project_id", projectId)
+        .limit(1)
+
+      if (error) {
+        console.error("Error checking first source:", error)
+        throw error
+      }
+
+      return !data || data.length === 0
+    } catch (error) {
+      console.error("Error checking first source:", error)
       throw error
     }
   }

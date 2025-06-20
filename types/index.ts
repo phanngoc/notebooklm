@@ -8,6 +8,15 @@ export interface Document {
   createdAt: Date
 }
 
+export interface Project {
+  id: string
+  name: string
+  description: string
+  user_id: string
+  created_at: string
+  updated_at: string
+}
+
 export interface ChatMessage {
   id: string
   role: "user" | "assistant"
