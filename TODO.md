@@ -33,7 +33,7 @@ self.entity_types = [
 
 ## Tạo flow 
 https://reactflow.dev/
-
+Vẽ flow các action sẽ làm trong project.
 
 ## Tích hợp search để khám phá idea mới.
 
