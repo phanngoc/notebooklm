@@ -3,6 +3,7 @@ from concurrent import futures
 import os
 import logging
 import sys
+import asyncio
 
 # Add generated directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'generated'))
@@ -11,11 +12,14 @@ import chat_memory_pb2
 import chat_memory_pb2_grpc
 import graphrag_pb2
 import graphrag_pb2_grpc
+import google_drive_pb2
+import google_drive_pb2_grpc
 
 from openai import OpenAI
 from mem0 import Memory
 from dotenv import load_dotenv
 from services.graphrag import GraphRAGService
+from services.google_drive import GoogleDriveProcessor
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -248,6 +252,103 @@ class GraphRAGServicer(graphrag_pb2_grpc.GraphRAGServiceServicer):
             )
 
 
+# Initialize Google Drive processor
+google_drive_processor = GoogleDriveProcessor()
+
+class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
+    """Google Drive service implementation"""
+    
+    def ProcessFolder(self, request, context):
+        """Process a Google Drive folder"""
+        try:
+            logger.info(f"Processing Google Drive folder for user: {request.user_id}")
+            
+            # Start async processing
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            task_id = loop.run_until_complete(
+                google_drive_processor.process_folder_async(
+                    request.folder_url,
+                    request.user_id,
+                    request.project_id,
+                    list(request.file_types) if request.file_types else None
+                )
+            )
+            
+            return google_drive_pb2.ProcessFolderResponse(
+                success=True,
+                message="Processing started successfully",
+                task_id=task_id,
+                files_found=0,  # Will be updated in status
+                files_processed=0,
+                processed_files=[]
+            )
+            
+        except Exception as e:
+            logger.error(f"Error processing folder: {str(e)}")
+            return google_drive_pb2.ProcessFolderResponse(
+                success=False,
+                message=f"Error: {str(e)}",
+                task_id="",
+                files_found=0,
+                files_processed=0,
+                processed_files=[]
+            )
+    
+    def GetProcessingStatus(self, request, context):
+        """Get status of folder processing"""
+        try:
+            status_info = google_drive_processor.get_processing_status(request.task_id)
+            
+            if not status_info['success']:
+                return google_drive_pb2.GetStatusResponse(
+                    success=False,
+                    status="not_found",
+                    message=status_info['message'],
+                    total_files=0,
+                    processed_files=0,
+                    failed_files=0,
+                    results=[]
+                )
+            
+            # Convert results to protobuf format
+            processed_files = []
+            for result in status_info.get('results', []):
+                processed_file = google_drive_pb2.ProcessedFile(
+                    file_name=result['file_name'],
+                    file_id=result['file_id'],
+                    source_id=result['source_id'],
+                    success=result['success'],
+                    error_message=result['error_message'],
+                    markdown_content=result['markdown_content'][:1000],  # Truncate for response
+                    file_size=result['file_size']
+                )
+                processed_files.append(processed_file)
+            
+            return google_drive_pb2.GetStatusResponse(
+                success=True,
+                status=status_info['status'],
+                message=status_info['message'],
+                total_files=status_info['total_files'],
+                processed_files=status_info['processed_files'],
+                failed_files=status_info['failed_files'],
+                results=processed_files
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting processing status: {str(e)}")
+            return google_drive_pb2.GetStatusResponse(
+                success=False,
+                status="error",
+                message=f"Error: {str(e)}",
+                total_files=0,
+                processed_files=0,
+                failed_files=0,
+                results=[]
+            )
+
+
 def serve():
     """Start the GraphRAG gRPC server"""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -256,6 +357,9 @@ def serve():
     )
     graphrag_pb2_grpc.add_GraphRAGServiceServicer_to_server(
         GraphRAGServicer(), server
+    )
+    google_drive_pb2_grpc.add_GoogleDriveServiceServicer_to_server(
+        GoogleDriveServicer(), server
     )
     
     listen_addr = '[::]:50052'  # Different port from chat memory service

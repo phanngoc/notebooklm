@@ -6,3 +6,9 @@ python-dotenv
 qdrant-client
 # GraphRAG dependencies
 fast-graphrag
+# Google Drive API
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+# Document conversion
+docling

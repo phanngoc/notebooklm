@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "graphrag:start": "cd ai && ./start_graphrag_server.sh",
-    "graphrag:test": "node scripts/test-graphrag.js"
+    "graphrag:test": "node scripts/test-graphrag.js",
+    "proto:generate": "cd ai && ./generate_proto.sh"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.13.4",
