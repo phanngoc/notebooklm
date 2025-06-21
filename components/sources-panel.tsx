@@ -15,6 +15,7 @@ interface SourcesPanelProps {
   onToggleSelection?: (id: string) => void
   onRemoveDocument: (id: string) => void
   isLoading?: boolean
+  projectId?: string // Add projectId prop
 }
 
 export function SourcesPanel({
@@ -23,6 +24,7 @@ export function SourcesPanel({
   onToggleSelection,
   onRemoveDocument,
   isLoading = false,
+  projectId,
 }: SourcesPanelProps) {
   const [isAddingSource, setIsAddingSource] = useState(false)
   const [urlInput, setUrlInput] = useState("")
@@ -65,7 +67,7 @@ export function SourcesPanel({
         },
         body: JSON.stringify({
           url: urlInput,
-          projectId: 'current-project-id', // TODO: Get from context
+          projectId: projectId || 'current-project-id', // Use provided projectId
           fileTypes: ['docx']
         }),
       })

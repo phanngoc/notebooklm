@@ -8,6 +8,17 @@ export interface Document {
   createdAt: Date
 }
 
+export interface Setting {
+  id: string
+  user_id: string
+  key: string
+  value: string
+  description?: string
+  is_encrypted: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Project {
   id: string
   name: string

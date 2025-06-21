@@ -1,6 +1,8 @@
 import os
 import io
 import uuid
+import json
+import tempfile
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -14,6 +16,7 @@ from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import InputFormat
 
 from .graphrag import GraphRAGService
+from .database import get_db_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +32,7 @@ class GoogleDriveProcessor:
         self.credentials_path = credentials_path or os.getenv("GOOGLE_CREDENTIALS_PATH")
         self.graphrag_service = GraphRAGService()
         self.document_converter = DocumentConverter()
+        self.db_service = get_db_service()
         
         # Processing tasks storage (in production, use Redis or database)
         self.processing_tasks: Dict[str, Dict[str, Any]] = {}
@@ -38,17 +42,53 @@ class GoogleDriveProcessor:
         
         logger.info("GoogleDriveProcessor initialized")
     
-    def _get_drive_service(self):
+    def _get_user_credentials(self, user_id: str) -> Optional[str]:
+        """Get user's Google Drive credentials from database"""
+        try:
+            credentials = self.db_service.get_google_drive_credentials(user_id)
+            if credentials:
+                logger.info(f"Found Google Drive credentials for user {user_id}")
+                return credentials
+            
+            logger.warning(f"No Google Drive credentials found for user {user_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching user credentials from database: {str(e)}")
+            return None
+    
+    def _get_drive_service(self, user_id: Optional[str] = None):
         """Create and return Google Drive service"""
-        if not self.credentials_path or not os.path.exists(self.credentials_path):
-            raise Exception("Google Drive credentials not found. Please set GOOGLE_CREDENTIALS_PATH")
+        credentials_json = None
         
-        credentials = Credentials.from_service_account_file(
-            self.credentials_path,
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
-        )
+        # Try to get user-specific credentials first
+        if user_id:
+            credentials_json = self._get_user_credentials(user_id)
         
-        return build('drive', 'v3', credentials=credentials)
+        # Fall back to file-based credentials
+        if not credentials_json and self.credentials_path and os.path.exists(self.credentials_path):
+            credentials = Credentials.from_service_account_file(
+                self.credentials_path,
+                scopes=['https://www.googleapis.com/auth/drive.readonly']
+            )
+            return build('drive', 'v3', credentials=credentials)
+        
+        # Try JSON credentials from database
+        if credentials_json:
+            try:
+                # Assume it's JSON string from database
+                cred_data = json.loads(credentials_json)
+                
+                credentials = Credentials.from_service_account_info(
+                    cred_data,
+                    scopes=['https://www.googleapis.com/auth/drive.readonly']
+                )
+                return build('drive', 'v3', credentials=credentials)
+                
+            except Exception as e:
+                logger.error(f"Error creating credentials from JSON: {str(e)}")
+        
+        raise Exception("Google Drive credentials not found. Please configure credentials in your profile settings.")
     
     def _extract_folder_id(self, folder_url: str) -> str:
         """Extract folder ID from Google Drive URL"""
@@ -151,42 +191,26 @@ class GoogleDriveProcessor:
     def _save_to_database(self, user_id: str, project_id: str, file_info: Dict[str, Any], 
                          markdown_content: str) -> str:
         """Save document to database and return source ID"""
-        # TODO: Integrate with actual database service
-        # This is a placeholder - in production, you would:
-        # 1. Make HTTP request to Next.js API to save the document
-        # 2. Or use direct database connection
-        
-        import requests
-        import json
-        
         try:
-            # Make API call to save document
-            api_url = os.getenv('NEXTJS_API_URL', 'http://localhost:3000') + '/api/documents/process'
+            # Save document directly to database
+            source_id = self.db_service.save_document_to_db(
+                user_id=user_id,
+                project_id=project_id,
+                title=file_info['name'],
+                content=markdown_content,
+                doc_type='google-drive',
+                url=f"https://drive.google.com/file/d/{file_info['id']}/view"
+            )
             
-            payload = {
-                'content': markdown_content,
-                'title': file_info['name'],
-                'type': 'google-drive',
-                'url': f"https://drive.google.com/file/d/{file_info['id']}/view",
-                'projectId': project_id
-            }
-            
-            headers = {
-                'Content-Type': 'application/json',
-                # TODO: Add authentication headers
-            }
-            
-            response = requests.post(api_url, json=payload, headers=headers)
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result.get('sourceId', str(uuid.uuid4()))
+            if source_id:
+                logger.info(f"Document {file_info['name']} saved with source ID: {source_id}")
+                return source_id
             else:
-                logger.error(f"API error saving document: {response.status_code}")
-                return str(uuid.uuid4())  # Fallback
+                logger.error(f"Failed to save document {file_info['name']} to database")
+                return str(uuid.uuid4())  # Fallback ID
                 
         except Exception as e:
-            logger.error(f"Error calling API to save document: {str(e)}")
+            logger.error(f"Error saving document to database: {str(e)}")
             # Fallback: generate a mock source ID
             return str(uuid.uuid4())
     
@@ -275,7 +299,7 @@ class GoogleDriveProcessor:
             folder_id = self._extract_folder_id(folder_url)
             
             # Get Drive service
-            service = self._get_drive_service()
+            service = self._get_drive_service(user_id)
             
             # List files
             self.processing_tasks[task_id]['message'] = 'Scanning folder for files...'

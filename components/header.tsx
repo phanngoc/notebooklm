@@ -62,6 +62,15 @@ export default function Header({ showBackButton = true, title = "NotebookLLM" }:
             <User className="w-4 h-4" />
             <span className="text-sm">{userName || user.email}</span>
           </div>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => router.push('/profile')}
+            className="flex items-center gap-2"
+          >
+            <User className="w-4 h-4" />
+            Profile
+          </Button>
           <Button variant="outline" size="sm" onClick={handleSignOut}>
             <LogOut className="w-4 h-4 mr-2" />
             Sign out

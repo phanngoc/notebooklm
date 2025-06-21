@@ -7,8 +7,6 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "graphrag:start": "cd ai && ./start_graphrag_server.sh",
-    "graphrag:test": "node scripts/test-graphrag.js",
     "proto:generate": "cd ai && ./generate_proto.sh"
   },
   "dependencies": {
