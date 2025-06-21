@@ -15,6 +15,7 @@ interface SourcesPanelProps {
   onToggleSelection?: (id: string) => void
   onRemoveDocument: (id: string) => void
   isLoading?: boolean
+  projectId?: string // Add projectId prop
 }
 
 export function SourcesPanel({
@@ -23,24 +24,113 @@ export function SourcesPanel({
   onToggleSelection,
   onRemoveDocument,
   isLoading = false,
+  projectId,
 }: SourcesPanelProps) {
   const [isAddingSource, setIsAddingSource] = useState(false)
   const [urlInput, setUrlInput] = useState("")
   const [textInput, setTextInput] = useState("")
   const [titleInput, setTitleInput] = useState("")
+  const [processingTaskId, setProcessingTaskId] = useState<string | null>(null)
+  const [processingStatus, setProcessingStatus] = useState<{
+    status: string
+    message: string
+    totalFiles: number
+    processedFiles: number
+    failedFiles: number
+  } | null>(null)
 
-  const handleAddUrl = () => {
+  const handleAddUrl = async () => {
     if (urlInput.trim()) {
-      onAddDocument({
-        title: titleInput || `Website: ${urlInput}`,
-        type: "website",
-        content: `Content from: ${urlInput}`,
-        url: urlInput,
-      })
-      setUrlInput("")
-      setTitleInput("")
-      setIsAddingSource(false)
+      // Check if it's a Google Drive folder
+      if (urlInput.includes('drive.google.com/drive/folders/')) {
+        await handleGoogleDriveFolder()
+      } else {
+        onAddDocument({
+          title: titleInput || `Website: ${urlInput}`,
+          type: "website",
+          content: `Content from: ${urlInput}`,
+          url: urlInput,
+        })
+        setUrlInput("")
+        setTitleInput("")
+        setIsAddingSource(false)
+      }
     }
+  }
+
+  const handleGoogleDriveFolder = async () => {
+    try {
+      const response = await fetch('/api/google-drive/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: urlInput,
+          projectId: projectId || 'current-project-id', // Use provided projectId
+          fileTypes: ['docx']
+        }),
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setProcessingTaskId(result.taskId)
+        setProcessingStatus({
+          status: 'processing',
+          message: result.message,
+          totalFiles: result.filesFound || 0,
+          processedFiles: 0,
+          failedFiles: 0
+        })
+        
+        // Start polling for status
+        pollProcessingStatus(result.taskId)
+        
+        setUrlInput("")
+        setTitleInput("")
+        setIsAddingSource(false)
+      } else {
+        alert(`Error: ${result.error}`)
+      }
+    } catch (error) {
+      console.error('Error processing Google Drive folder:', error)
+      alert('Failed to process Google Drive folder')
+    }
+  }
+
+  const pollProcessingStatus = async (taskId: string) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/google-drive/process?taskId=${taskId}`)
+        const status = await response.json()
+
+        if (status.success) {
+          setProcessingStatus({
+            status: status.status,
+            message: status.message,
+            totalFiles: status.totalFiles,
+            processedFiles: status.processedFiles,
+            failedFiles: status.failedFiles
+          })
+
+          // Stop polling if completed or failed
+          if (status.status === 'completed' || status.status === 'failed') {
+            clearInterval(pollInterval)
+            setProcessingTaskId(null)
+            
+            if (status.status === 'completed') {
+              // Refresh documents list
+              window.location.reload() // TODO: Better way to refresh
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error polling status:', error)
+        clearInterval(pollInterval)
+        setProcessingTaskId(null)
+      }
+    }, 2000) // Poll every 2 seconds
   }
 
   const handleAddText = () => {
@@ -60,6 +150,8 @@ export function SourcesPanel({
     switch (type) {
       case "google-doc":
         return <FileText className="w-4 h-4 text-blue-600" />
+      case "google-drive":
+        return <FileText className="w-4 h-4 text-blue-500" />
       case "website":
         return <Globe className="w-4 h-4 text-green-600" />
       case "text":
@@ -84,7 +176,7 @@ export function SourcesPanel({
           <Card className="p-4 mb-4">
             <Tabs defaultValue="url" className="w-full">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="url">URL</TabsTrigger>
+                <TabsTrigger value="url">URL / Google Drive</TabsTrigger>
                 <TabsTrigger value="text">Text</TabsTrigger>
               </TabsList>
 
@@ -95,13 +187,16 @@ export function SourcesPanel({
                   onChange={(e) => setTitleInput(e.target.value)}
                 />
                 <Input
-                  placeholder="Enter website URL or Google Doc link"
+                  placeholder="Enter website URL or Google Drive folder link"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                 />
                 <Button onClick={handleAddUrl} className="w-full" disabled={isLoading}>
                   {isLoading ? "Processing..." : "Add URL"}
                 </Button>
+                <p className="text-xs text-gray-500">
+                  Support: Website URLs, Google Drive folder sharing links (.docx files)
+                </p>
               </TabsContent>
 
               <TabsContent value="text" className="space-y-3">
@@ -121,6 +216,27 @@ export function SourcesPanel({
                 </Button>
               </TabsContent>
             </Tabs>
+          </Card>
+        )}
+
+        {/* Processing Status Display */}
+        {processingTaskId && processingStatus && (
+          <Card className="p-4 mb-4 bg-blue-50 border-blue-200">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                <span className="text-sm font-medium text-blue-800">Processing Google Drive Folder</span>
+              </div>
+              <p className="text-xs text-blue-600">{processingStatus.message}</p>
+              {processingStatus.totalFiles > 0 && (
+                <div className="text-xs text-blue-600">
+                  Progress: {processingStatus.processedFiles + processingStatus.failedFiles} / {processingStatus.totalFiles} files
+                  {processingStatus.failedFiles > 0 && (
+                    <span className="text-red-600 ml-2">({processingStatus.failedFiles} failed)</span>
+                  )}
+                </div>
+              )}
+            </div>
           </Card>
         )}
       </div>

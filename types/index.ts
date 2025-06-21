@@ -1,11 +1,32 @@
 export interface Document {
   id: string
   title: string
-  type: "google-doc" | "website" | "text" | "pdf"
+  type: "google-doc" | "google-drive" | "website" | "text" | "pdf" | "document" | "markdown" | "spreadsheet" | "data" | "webpage" | "unknown"
   content: string
   url?: string
   selected: boolean
   createdAt: Date
+  // File upload specific fields
+  filePath?: string
+  fileSize?: number
+  mimeType?: string
+  metadata?: {
+    original_filename?: string
+    upload_timestamp?: string
+    processing_status?: string
+    [key: string]: any
+  }
+}
+
+export interface Setting {
+  id: string
+  user_id: string
+  key: string
+  value: string
+  description?: string
+  is_encrypted: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface Project {

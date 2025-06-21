@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package google_drive;
+
+// Service for processing Google Drive folders
+service GoogleDriveService {
+  // Process a Google Drive folder - scan for docx files, convert to markdown, and index
+  rpc ProcessFolder(ProcessFolderRequest) returns (ProcessFolderResponse);
+  
+  // Get status of folder processing
+  rpc GetProcessingStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+// Request to process a Google Drive folder
+message ProcessFolderRequest {
+  string folder_url = 1;           // Google Drive folder URL
+  string user_id = 2;              // User ID for the request
+  string project_id = 3;           // Project ID to associate documents with
+  repeated string file_types = 4;  // File types to process (e.g., "docx", "pdf")
+}
+
+// Response from folder processing
+message ProcessFolderResponse {
+  bool success = 1;
+  string message = 2;
+  string task_id = 3;              // ID to track processing status
+  int32 files_found = 4;           // Number of files found
+  int32 files_processed = 5;       // Number of files successfully processed
+  repeated ProcessedFile processed_files = 6;
+}
+
+// Request to get processing status
+message GetStatusRequest {
+  string task_id = 1;
+}
+
+// Response with processing status
+message GetStatusResponse {
+  bool success = 1;
+  string status = 2;               // "processing", "completed", "failed"
+  string message = 3;
+  int32 total_files = 4;
+  int32 processed_files = 5;
+  int32 failed_files = 6;
+  repeated ProcessedFile results = 7;
+}
+
+// Information about a processed file
+message ProcessedFile {
+  string file_name = 1;
+  string file_id = 2;              // Google Drive file ID
+  string source_id = 3;            // Database source ID if successfully saved
+  bool success = 4;
+  string error_message = 5;
+  string markdown_content = 6;     // Converted markdown content
+  int64 file_size = 7;
+}
