@@ -60,7 +60,7 @@ export default function Header({ showBackButton = true, title = "NotebookLLM" }:
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <User className="w-4 h-4" />
-            <span className="text-sm">{userName || user.email}</span>
+            <span className="text-sm" onClick={() => router.push('/profile')}>{userName || user.email}</span>
           </div>
           <Button variant="outline" size="sm" onClick={handleSignOut}>
             <LogOut className="w-4 h-4 mr-2" />

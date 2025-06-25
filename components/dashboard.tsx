@@ -341,6 +341,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
         documents={documents}
         onAddDocument={addDocument}
         onRemoveDocument={removeDocument}
+        projectId={projectId}
         isLoading={documentsLoading || isLoading}
       />
 

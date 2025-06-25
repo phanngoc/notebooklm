@@ -450,6 +450,113 @@ export class DatabaseService {
       throw error
     }
   }
+
+  // Settings management
+  async getUserSettings(userId: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from("settings")
+        .select("*")
+        .eq("user_id", userId)
+        .order("key")
+
+      if (error) {
+        console.error("Error fetching user settings:", error)
+        throw error
+      }
+      return data || []
+    } catch (error) {
+      console.error("Error fetching user settings:", error)
+      throw error
+    }
+  }
+
+  async getUserSetting(userId: string, key: string) {
+    try {
+      const { data, error } = await this.supabase
+        .from("settings")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("key", key)
+        .single()
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        console.error("Error fetching user setting:", error)
+        throw error
+      }
+      return data
+    } catch (error) {
+      console.error("Error fetching user setting:", error)
+      throw error
+    }
+  }
+
+  async upsertUserSetting(userId: string, key: string, value: string, description?: string, isEncrypted = false) {
+    try {
+      const { data, error } = await this.supabase
+        .from("settings")
+        .upsert({
+          user_id: userId,
+          key,
+          value,
+          description,
+          is_encrypted: isEncrypted,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id,key'
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error upserting user setting:", error)
+        throw error
+      }
+      return data
+    } catch (error) {
+      console.error("Error upserting user setting:", error)
+      throw error
+    }
+  }
+
+  async deleteUserSetting(userId: string, key: string) {
+    try {
+      const { error } = await this.supabase
+        .from("settings")
+        .delete()
+        .eq("user_id", userId)
+        .eq("key", key)
+
+      if (error) {
+        console.error("Error deleting user setting:", error)
+        throw error
+      }
+      return true
+    } catch (error) {
+      console.error("Error deleting user setting:", error)
+      throw error
+    }
+  }
+
+  // Google Drive credentials management
+  async setGoogleDriveCredentials(userId: string, credentialsJson: string) {
+    return this.upsertUserSetting(
+      userId, 
+      'google_drive_credentials', 
+      credentialsJson, 
+      'Google Drive service account credentials (JSON)', 
+      true // encrypted
+    )
+  }
+
+  async getGoogleDriveCredentials(userId: string) {
+    const setting = await this.getUserSetting(userId, 'google_drive_credentials')
+    return setting?.value || null
+  }
+
+  async deleteGoogleDriveCredentials(userId: string) {
+    return this.deleteUserSetting(userId, 'google_drive_credentials')
+  }
 }
 
 export const dbService = new DatabaseService()
