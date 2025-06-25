@@ -281,7 +281,7 @@ class GoogleDriveProcessor:
                 project_id=project_id,
                 title=file_info['name'],
                 content=markdown_content,
-                doc_type='google-drive',
+                doc_type=file_info.get('mimeType', 'google-doc'),
                 url=f"https://drive.google.com/file/d/{file_info['id']}/view"
             )
             

@@ -65,7 +65,7 @@ class DatabaseService:
             return None
     
     def save_document_to_db(self, user_id: str, project_id: str, title: str, 
-                           content: str, doc_type: str = 'google-drive', 
+                           content: str, doc_type: str = 'google-doc', 
                            url: Optional[str] = None) -> Optional[str]:
         """Save a document to the sources table and return source ID"""
         try:

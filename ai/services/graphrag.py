@@ -160,68 +160,10 @@ class GraphRAGService:
     def query_graph(self, query: str, user_id: str, project_id: str = "default") -> Dict[str, Any]:
         """Query the knowledge graph for relevant information"""
         try:
-            logger.info(f"Querying graph for user {user_id}: {query}")
+            print(f"Querying graph for user {user_id}: {query}")
 
-            graph_key = self._get_graph_key(user_id, project_id)
-            if graph_key not in self.graphrag_instances:
-                return {
-                    'response': "No knowledge graph found for this user. Please insert documents first.",
-                    'entities': [],
-                    'relationships': [],
-                    'success': False,
-                    'error': "Graph not found"
-                }
-            
-            grag = self.graphrag_instances[graph_key]
-            
-            # Query the graph - handle async/sync properly
-            try:
-                # Check if we have an async version
-                if hasattr(grag, 'aquery'):
-                    # Use async version with proper event loop handling
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(self._run_async_query, grag, query)
-                                result = future.result()
-                        else:
-                            result = asyncio.run(grag.aquery(query))
-                    except RuntimeError as e:
-                        if "This event loop is already running" in str(e):
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(self._run_async_query, grag, query)
-                                result = future.result()
-                        else:
-                            raise
-                elif hasattr(grag, 'async_query'):
-                    # Alternative async method name
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(self._run_async_query_alt, grag, query)
-                                result = future.result()
-                        else:
-                            result = asyncio.run(grag.async_query(query))
-                    except RuntimeError as e:
-                        if "This event loop is already running" in str(e):
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                future = executor.submit(self._run_async_query_alt, grag, query)
-                                result = future.result()
-                        else:
-                            raise
-                else:
-                    # Fallback to sync version
-                    result = grag.query(query)
-            except Exception as inner_e:
-                logger.warning(f"Async query failed: {inner_e}, trying sync version")
-                # Fallback to sync version
-                result = grag.query(query)
+            graph = self._get_or_create_graphrag(user_id, project_id)
+            result = graph.query(query)
 
             return {
                 'response': result.response if hasattr(result, 'response') else str(result),
@@ -234,6 +176,7 @@ class GraphRAGService:
             
         except Exception as e:
             logger.error(f"Error querying graph: {str(e)}")
+            print(f"Error querying graph: {str(e)}")
             return {
                 'response': "",
                 'entities': [],
