@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fast_graphrag import GraphRAG
@@ -79,8 +80,57 @@ class GraphRAGService:
 
             grag = self._get_or_create_graphrag(user_id, project_id)
 
-            # Insert content into GraphRAG
-            grag.insert(content)
+            # Insert content into GraphRAG - handle async/sync properly
+            try:
+                # Check if we have an async version
+                if hasattr(grag, 'ainsert'):
+                    # Use async version with proper event loop handling
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Already in async context, use thread executor
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_insert, grag, content)
+                                future.result()
+                        else:
+                            # No running loop, safe to use asyncio.run
+                            asyncio.run(grag.ainsert(content))
+                    except RuntimeError as e:
+                        if "This event loop is already running" in str(e):
+                            # Fallback to thread executor
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_insert, grag, content)
+                                future.result()
+                        else:
+                            raise
+                elif hasattr(grag, 'async_insert'):
+                    # Alternative async method name
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(asyncio.run, grag.async_insert(content))
+                                future.result()
+                        else:
+                            asyncio.run(grag.async_insert(content))
+                    except RuntimeError as e:
+                        if "This event loop is already running" in str(e):
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_insert_alt, grag, content)
+                                future.result()
+                        else:
+                            raise
+                else:
+                    # Fallback to sync version
+                    grag.insert(content)
+            except Exception as inner_e:
+                logger.warning(f"Async insert failed: {inner_e}, trying sync version")
+                # Fallback to sync version
+                grag.insert(content)
             
             return {
                 'success': True,
@@ -98,6 +148,14 @@ class GraphRAGService:
                 'entities_extracted': 0,
                 'relationships_extracted': 0
             }
+    
+    def _run_async_insert(self, grag, content: str):
+        """Helper method to run async insert in a new event loop"""
+        asyncio.run(grag.ainsert(content))
+        
+    def _run_async_insert_alt(self, grag, content: str):
+        """Helper method to run async insert (alternative method) in a new event loop"""
+        asyncio.run(grag.async_insert(content))
 
     def query_graph(self, query: str, user_id: str, project_id: str = "default") -> Dict[str, Any]:
         """Query the knowledge graph for relevant information"""
@@ -116,11 +174,57 @@ class GraphRAGService:
             
             grag = self.graphrag_instances[graph_key]
             
-            # Query the graph
-            result = grag.query(query)
+            # Query the graph - handle async/sync properly
+            try:
+                # Check if we have an async version
+                if hasattr(grag, 'aquery'):
+                    # Use async version with proper event loop handling
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_query, grag, query)
+                                result = future.result()
+                        else:
+                            result = asyncio.run(grag.aquery(query))
+                    except RuntimeError as e:
+                        if "This event loop is already running" in str(e):
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_query, grag, query)
+                                result = future.result()
+                        else:
+                            raise
+                elif hasattr(grag, 'async_query'):
+                    # Alternative async method name
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_query_alt, grag, query)
+                                result = future.result()
+                        else:
+                            result = asyncio.run(grag.async_query(query))
+                    except RuntimeError as e:
+                        if "This event loop is already running" in str(e):
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                future = executor.submit(self._run_async_query_alt, grag, query)
+                                result = future.result()
+                        else:
+                            raise
+                else:
+                    # Fallback to sync version
+                    result = grag.query(query)
+            except Exception as inner_e:
+                logger.warning(f"Async query failed: {inner_e}, trying sync version")
+                # Fallback to sync version
+                result = grag.query(query)
 
             return {
-                'response': result.response,
+                'response': result.response if hasattr(result, 'response') else str(result),
                 'entities': [],  # fast-graphrag doesn't expose entities directly
                 'relationships': [],  # fast-graphrag doesn't expose relationships directly
                 'context': {},
@@ -137,3 +241,11 @@ class GraphRAGService:
                 'success': False,
                 'error': str(e)
             }
+    
+    def _run_async_query(self, grag, query: str):
+        """Helper method to run async query in a new event loop"""
+        return asyncio.run(grag.aquery(query))
+        
+    def _run_async_query_alt(self, grag, query: str):
+        """Helper method to run async query (alternative method) in a new event loop"""
+        return asyncio.run(grag.async_query(query))

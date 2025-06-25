@@ -13,6 +13,6 @@ google-auth-httplib2
 # Document conversion
 docling
 # Database connectivity
-psycopg2-binary
+supabase
 # HTTP requests (for fallback API calls)
 requests

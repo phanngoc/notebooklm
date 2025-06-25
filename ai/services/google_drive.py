@@ -105,7 +105,7 @@ class GoogleDriveProcessor:
     def _list_folder_files(self, service, folder_id: str, file_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """List all files in the folder matching the specified types"""
         if file_types is None:
-            file_types = ['docx']
+            file_types = ['docx', 'google-docs']
         
         # Build query for file types
         type_queries = []
@@ -116,8 +116,29 @@ class GoogleDriveProcessor:
                 type_queries.append("mimeType='application/pdf'")
             elif file_type.lower() == 'txt':
                 type_queries.append("mimeType='text/plain'")
+            elif file_type.lower() == 'google-docs':
+                type_queries.append("mimeType='application/vnd.google-apps.document'")
+            elif file_type.lower() == 'google-sheets':
+                type_queries.append("mimeType='application/vnd.google-apps.spreadsheet'")
+            elif file_type.lower() == 'google-slides':
+                type_queries.append("mimeType='application/vnd.google-apps.presentation'")
         
-        query = f"'{folder_id}' in parents and ({' or '.join(type_queries)}) and trashed=false"
+        # If no specific file types requested, search for common document types
+        if not type_queries:
+            type_queries = [
+                "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
+                "mimeType='application/pdf'",
+                "mimeType='text/plain'",
+                "mimeType='application/vnd.google-apps.document'",
+                "mimeType='application/vnd.google-apps.spreadsheet'",
+                "mimeType='application/vnd.google-apps.presentation'"
+            ]
+        
+        # Combine folder query with fijle type queries
+        type_query = " or ".join(type_queries)
+        query = f"'{folder_id}' in parents"
+        
+        logger.info(f"Searching with query: {query}")
         
         files = []
         page_token = None
@@ -131,8 +152,12 @@ class GoogleDriveProcessor:
                     pageToken=page_token
                 ).execute()
                 
-                files.extend(results.get('files', []))
+                current_files = results.get('files', [])
+                print("current_files", current_files)
+                files.extend(current_files)
                 page_token = results.get('nextPageToken')
+                
+                logger.info(f"Found {len(current_files)} files in this batch")
                 
                 if not page_token:
                     break
@@ -141,13 +166,35 @@ class GoogleDriveProcessor:
                 logger.error(f"Error listing files: {str(e)}")
                 break
         
-        logger.info(f"Found {len(files)} files in folder {folder_id}")
+        logger.info(f"Found {len(files)} total files in folder {folder_id}")
         return files
     
-    def _download_file(self, service, file_id: str) -> bytes:
+    def _download_file(self, service, file_id: str, mime_type: str = None) -> bytes:
         """Download file content from Google Drive"""
         try:
-            request = service.files().get_media(fileId=file_id)
+            # First, try to get the file metadata to check the MIME type
+            if not mime_type:
+                file_metadata = service.files().get(fileId=file_id, fields='mimeType').execute()
+                mime_type = file_metadata.get('mimeType')
+            
+            # Check if it's a Google Workspace document that needs to be exported
+            google_workspace_mimes = {
+                'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # Google Docs -> DOCX
+                'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # Google Sheets -> XLSX
+                'application/vnd.google-apps.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # Google Slides -> PPTX
+                'application/vnd.google-apps.drawing': 'application/pdf',  # Google Drawings -> PDF
+            }
+            
+            if mime_type in google_workspace_mimes:
+                # Export Google Workspace document
+                export_mime_type = google_workspace_mimes[mime_type]
+                logger.info(f"Exporting Google Workspace file {file_id} from {mime_type} to {export_mime_type}")
+                request = service.files().export_media(fileId=file_id, mimeType=export_mime_type)
+            else:
+                # Download binary file directly
+                logger.info(f"Downloading binary file {file_id} with MIME type {mime_type}")
+                request = service.files().get_media(fileId=file_id)
+            
             file_content = io.BytesIO()
             downloader = MediaIoBaseDownload(file_content, request)
             
@@ -161,22 +208,45 @@ class GoogleDriveProcessor:
             logger.error(f"Error downloading file {file_id}: {str(e)}")
             raise
     
-    def _convert_to_markdown(self, file_content: bytes, file_name: str) -> str:
+    def _convert_to_markdown(self, file_content: bytes, file_name: str, original_mime_type: str = None) -> str:
         """Convert document content to markdown using docling"""
         try:
-            # Save content to temporary file
-            temp_file_path = f"/tmp/{uuid.uuid4()}_{file_name}"
+            # Determine file extension based on original MIME type
+            if original_mime_type == 'application/vnd.google-apps.document':
+                # Google Docs exported as DOCX
+                file_extension = '.docx'
+            elif original_mime_type == 'application/vnd.google-apps.spreadsheet':
+                # Google Sheets exported as XLSX
+                file_extension = '.xlsx'
+            elif original_mime_type == 'application/vnd.google-apps.presentation':
+                # Google Slides exported as PPTX
+                file_extension = '.pptx'
+            elif original_mime_type == 'application/vnd.google-apps.drawing':
+                # Google Drawings exported as PDF
+                file_extension = '.pdf'
+            else:
+                # Use original file extension or guess from content
+                file_extension = os.path.splitext(file_name)[1] or '.docx'
+            
+            # Generate unique temp filename
+            temp_file_path = f"/tmp/{uuid.uuid4()}_{os.path.splitext(file_name)[0]}{file_extension}"
             
             with open(temp_file_path, 'wb') as temp_file:
                 temp_file.write(file_content)
             
             try:
                 # Convert document using docling
+                logger.info(f"Converting {file_name} using docling with extension {file_extension}")
                 result = self.document_converter.convert(temp_file_path)
                 
                 # Extract markdown content
                 markdown_content = result.document.export_to_markdown()
                 
+                # Check if conversion was successful
+                if not markdown_content or len(markdown_content.strip()) == 0:
+                    raise ValueError("Document conversion resulted in empty content")
+                
+                logger.info(f"Successfully converted {file_name} to markdown ({len(markdown_content)} characters)")
                 return markdown_content
                 
             finally:
@@ -186,7 +256,20 @@ class GoogleDriveProcessor:
                     
         except Exception as e:
             logger.error(f"Error converting {file_name} to markdown: {str(e)}")
-            raise
+            
+            # For unsupported files, try to extract text as fallback
+            if original_mime_type == 'application/vnd.google-apps.document':
+                logger.info(f"Fallback: treating {file_name} as plain text")
+                try:
+                    # Try to decode as text (this might work for some exported formats)
+                    text_content = file_content.decode('utf-8', errors='ignore')
+                    if text_content.strip():
+                        return f"# {file_name}\n\n{text_content}"
+                except:
+                    pass
+            
+            # If all else fails, return a placeholder
+            return f"# {file_name}\n\n*Error: Could not convert this document to markdown. Original error: {str(e)}*"
     
     def _save_to_database(self, user_id: str, project_id: str, file_info: Dict[str, Any], 
                          markdown_content: str) -> str:
@@ -238,13 +321,22 @@ class GoogleDriveProcessor:
         
         try:
             # Download file
-            logger.info(f"Downloading file: {file_info['name']}")
-            file_content = self._download_file(service, file_info['id'])
+            logger.info(f"Downloading file: {file_info['name']} (MIME: {file_info.get('mimeType', 'unknown')})")
+            file_content = self._download_file(service, file_info['id'], file_info.get('mimeType'))
             
             # Convert to markdown
             logger.info(f"Converting file to markdown: {file_info['name']}")
-            markdown_content = self._convert_to_markdown(file_content, file_info['name'])
+            markdown_content = self._convert_to_markdown(
+                file_content, 
+                file_info['name'], 
+                file_info.get('mimeType')
+            )
             result['markdown_content'] = markdown_content
+            
+            # Check if we got valid content
+            if not markdown_content or len(markdown_content.strip()) < 10:
+                result['error_message'] = "Document conversion resulted in minimal or no content"
+                return result
             
             # Save to database
             logger.info(f"Saving to database: {file_info['name']}")
@@ -304,7 +396,7 @@ class GoogleDriveProcessor:
             # List files
             self.processing_tasks[task_id]['message'] = 'Scanning folder for files...'
             files = self._list_folder_files(service, folder_id, file_types)
-            
+            print("files", files, len(files))
             self.processing_tasks[task_id].update({
                 'total_files': len(files),
                 'message': f'Found {len(files)} files. Processing...'
