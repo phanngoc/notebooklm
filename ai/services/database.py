@@ -92,6 +92,20 @@ class DatabaseService:
             logger.error(f"Error saving document to database: {str(e)}")
             return None
     
+    def get_project(self, project_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get project configuration including GraphRAG settings"""
+        try:
+            response = self.supabase.table('projects').select('*').eq('id', project_id).eq('user_id', user_id).execute()
+            
+            if response.data and len(response.data) > 0:
+                return {"data": response.data[0]}
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching project: {str(e)}")
+            return None
+
     def close(self):
         """Close Supabase client connection"""
         # Supabase client doesn't need explicit closing like psycopg2

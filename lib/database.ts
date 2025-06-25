@@ -78,7 +78,13 @@ export class DatabaseService {
     }
   }
 
-  async updateProject(projectId: string, userId: string, updates: { name?: string; description?: string }) {
+  async updateProject(projectId: string, userId: string, updates: { 
+    name?: string; 
+    description?: string; 
+    domain?: string; 
+    example_queries?: string[]; 
+    entity_types?: string[] 
+  }) {
     try {
       const { data, error } = await this.supabase
         .from("projects")

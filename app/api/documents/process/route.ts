@@ -37,19 +37,40 @@ export async function POST(request: NextRequest) {
     if (isFirstSource) {
       try {
         const projectGenerationPrompt = `
-Based on the following source content, generate a concise project title and description:
+Based on the following source content, analyze and extract key information:
 
 Source Title: ${source.title}
 Source Content: ${content.substring(0, 1000)}...
 
 Please provide:
 1. A concise project title (max 50 characters)
-2. A brief project description (max 200 characters)
+2. A brief project description (max 200 characters) 
+3. An analysis domain description focused on the document's subject matter
+4. 5-7 example queries that would be relevant for this content
+5. 8-12 entity types that are most relevant to this domain
 
 Format your response as JSON:
 {
   "title": "Generated project title",
-  "description": "Generated project description"
+  "description": "Generated project description",
+  "domain": "Domain description focusing on the specific subject matter and key aspects to analyze",
+  "example_queries": [
+    "Relevant question 1",
+    "Relevant question 2",
+    "Relevant question 3",
+    "Relevant question 4",
+    "Relevant question 5"
+  ],
+  "entity_types": [
+    "EntityType1",
+    "EntityType2", 
+    "EntityType3",
+    "EntityType4",
+    "EntityType5",
+    "EntityType6",
+    "EntityType7",
+    "EntityType8"
+  ]
 }
 `
 
@@ -64,14 +85,14 @@ Format your response as JSON:
             messages: [
               {
                 role: "system",
-                content: "You are a helpful assistant that generates project titles and descriptions based on source content. Always respond with valid JSON."
+                content: "You are a helpful assistant that analyzes documents and extracts domain-specific information for knowledge graph creation. Always respond with valid JSON containing all requested fields."
               },
               {
                 role: "user",
                 content: projectGenerationPrompt
               }
             ],
-            max_tokens: 150,
+            max_tokens: 500,
             temperature: 0.7,
           }),
         })
@@ -82,36 +103,90 @@ Format your response as JSON:
 
           if (generatedContent) {
             try {
-              const { title: generatedTitle, description: generatedDescription } = JSON.parse(generatedContent)
+              const { 
+                title: generatedTitle, 
+                description: generatedDescription,
+                domain,
+                example_queries,
+                entity_types
+              } = JSON.parse(generatedContent)
               
-              // Update the project with generated title and description
+              // Update the project with generated title, description, and GraphRAG configs
               await dbService.updateProject(projectId, user.id, {
                 name: generatedTitle,
-                description: generatedDescription
+                description: generatedDescription,
+                domain: domain,
+                example_queries: example_queries,
+                entity_types: entity_types
               })
             } catch (parseError) {
               console.error("Error parsing OpenAI response:", parseError)
-              // Fallback to source title if parsing fails
+              // Fallback to source title and default configs if parsing fails
               await dbService.updateProject(projectId, user.id, {
                 name: source.title,
-                description: `Project based on: ${source.title}`
+                description: `Project based on: ${source.title}`,
+                domain: "Analyze documents to identify key information that affects business value, growth potential, and strategic insights. Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships.",
+                example_queries: [
+                  "What are the key factors driving business value?",
+                  "How do market trends affect competitive position?",
+                  "What strategic initiatives are mentioned in the documents?",
+                  "What are the main risk factors discussed?",
+                  "What financial metrics or performance indicators are highlighted?",
+                  "Who are the key people or organizations mentioned?",
+                  "What technologies or innovations are discussed?"
+                ],
+                entity_types: [
+                  "Company", "Person", "Financial_Metric", "Market_Trend", 
+                  "Technology", "Strategy", "Risk_Factor", "Product", 
+                  "Location", "Industry", "Partnership", "Investment"
+                ]
               })
             }
           }
         } else {
           console.error("OpenAI API error:", response.status, response.statusText)
-          // Fallback to source title if OpenAI fails
+          // Fallback to source title and default configs if OpenAI fails
           await dbService.updateProject(projectId, user.id, {
             name: source.title,
-            description: `Project based on: ${source.title}`
+            description: `Project based on: ${source.title}`,
+            domain: "Analyze documents to identify key information that affects business value, growth potential, and strategic insights. Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships.",
+            example_queries: [
+              "What are the key factors driving business value?",
+              "How do market trends affect competitive position?",
+              "What strategic initiatives are mentioned in the documents?",
+              "What are the main risk factors discussed?",
+              "What financial metrics or performance indicators are highlighted?",
+              "Who are the key people or organizations mentioned?",
+              "What technologies or innovations are discussed?"
+            ],
+            entity_types: [
+              "Company", "Person", "Financial_Metric", "Market_Trend", 
+              "Technology", "Strategy", "Risk_Factor", "Product", 
+              "Location", "Industry", "Partnership", "Investment"
+            ]
           })
         }
       } catch (aiError) {
         console.error("Error generating project title/description:", aiError)
-        // Fallback to source title if any error occurs
+        // Fallback to source title and default configs if any error occurs
         await dbService.updateProject(projectId, user.id, {
           name: source.title,
-          description: `Project based on: ${source.title}`
+          description: `Project based on: ${source.title}`,
+          domain: "Analyze documents to identify key information that affects business value, growth potential, and strategic insights. Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships.",
+          example_queries: [
+            "What are the key factors driving business value?",
+            "How do market trends affect competitive position?",
+            "What strategic initiatives are mentioned in the documents?",
+            "What are the main risk factors discussed?",
+            "What financial metrics or performance indicators are highlighted?",
+            "Who are the key people or organizations mentioned?",
+            "What technologies or innovations are discussed?"
+          ],
+          entity_types: [
+            "Company", "Person", "Financial_Metric", "Market_Trend", 
+            "Technology", "Strategy", "Risk_Factor", "Product", 
+            "Location", "Industry", "Partnership", "Investment"
+          ]
         })
       }
     }

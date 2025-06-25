@@ -36,6 +36,9 @@ export interface Project {
   user_id: string
   created_at: string
   updated_at: string
+  domain?: string
+  example_queries?: string[]
+  entity_types?: string[]
 }
 
 export interface ChatMessage {
