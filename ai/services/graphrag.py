@@ -6,6 +6,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fast_graphrag import GraphRAG
+from .database import DatabaseService
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -24,11 +25,14 @@ class GraphRAGService:
         # Ensure working directory exists
         os.makedirs(working_dir, exist_ok=True)
         
+        # Initialize database service
+        self.db_service = DatabaseService()
+        
         # Default domain and configuration for financial/business documents
-        self.domain = """Analyze documents to identify key information that affects business value, growth potential, and strategic insights. 
+        self.default_domain = """Analyze documents to identify key information that affects business value, growth potential, and strategic insights. 
         Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships."""
         
-        self.example_queries = [
+        self.default_example_queries = [
             "What are the key factors driving business value?",
             "How do market trends affect competitive position?",
             "What strategic initiatives are mentioned in the documents?",
@@ -38,7 +42,7 @@ class GraphRAGService:
             "What technologies or innovations are discussed?"
         ]
         
-        self.entity_types = [
+        self.default_entity_types = [
             "Company", "Person", "Financial_Metric", "Market_Trend", 
             "Technology", "Strategy", "Risk_Factor", "Product", 
             "Location", "Industry", "Partnership", "Investment"
@@ -53,23 +57,54 @@ class GraphRAGService:
         """Generate a unique key for user's graph"""
         return f"{user_id}_{project_id}"
 
+    def _get_project_config(self, user_id: str, project_id: str) -> Dict[str, Any]:
+        """Get project-specific configuration from database"""
+        try:
+            project_data = self.db_service.get_project(project_id, user_id)
+            
+            if project_data and 'data' in project_data and project_data['data']:
+                project = project_data['data']
+                return {
+                    'domain': project.get('domain', self.default_domain),
+                    'example_queries': project.get('example_queries', self.default_example_queries),
+                    'entity_types': project.get('entity_types', self.default_entity_types)
+                }
+            else:
+                logger.warning(f"No project data found for project {project_id}, using defaults")
+                return {
+                    'domain': self.default_domain,
+                    'example_queries': self.default_example_queries,
+                    'entity_types': self.default_entity_types
+                }
+        except Exception as e:
+            logger.error(f"Error getting project config: {e}")
+            # Return default configuration if database query fails
+            return {
+                'domain': self.default_domain,
+                'example_queries': self.default_example_queries,
+                'entity_types': self.default_entity_types
+            }
+
     def _get_or_create_graphrag(self, user_id: str, project_id: str = "default") -> GraphRAG:
         """Get or create a GraphRAG instance for the user/project"""
         graph_key = self._get_graph_key(user_id, project_id)
 
         if graph_key not in self.graphrag_instances:
+            # Get project-specific configuration
+            config = self._get_project_config(user_id, project_id)
+            
             # Create user-specific working directory
             user_working_dir = os.path.join(self.working_dir, graph_key)
             os.makedirs(user_working_dir, exist_ok=True)
             
-            # Create new GraphRAG instance
+            # Create new GraphRAG instance with project-specific config
             self.graphrag_instances[graph_key] = GraphRAG(
                 working_dir=user_working_dir,
-                domain=self.domain,
-                example_queries="\n".join(self.example_queries),
-                entity_types=self.entity_types
+                domain=config['domain'],
+                example_queries="\n".join(config['example_queries']),
+                entity_types=config['entity_types']
             )
-            logger.info(f"Created new GraphRAG instance for {graph_key}")
+            logger.info(f"Created new GraphRAG instance for {graph_key} with project-specific config")
         
         return self.graphrag_instances[graph_key]
 
@@ -192,3 +227,17 @@ class GraphRAGService:
     def _run_async_query_alt(self, grag, query: str):
         """Helper method to run async query (alternative method) in a new event loop"""
         return asyncio.run(grag.async_query(query))
+
+    def clear_graphrag_cache(self, user_id: str, project_id: str = None):
+        """Clear cached GraphRAG instance when project configuration changes"""
+        if project_id:
+            graph_key = self._get_graph_key(user_id, project_id)
+            if graph_key in self.graphrag_instances:
+                del self.graphrag_instances[graph_key]
+                logger.info(f"Cleared GraphRAG cache for {graph_key}")
+        else:
+            # Clear all instances for the user
+            keys_to_remove = [key for key in self.graphrag_instances.keys() if key.startswith(f"{user_id}_")]
+            for key in keys_to_remove:
+                del self.graphrag_instances[key]
+            logger.info(f"Cleared all GraphRAG cache for user {user_id}")

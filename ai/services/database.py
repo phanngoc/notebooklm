@@ -22,16 +22,16 @@ class DatabaseService:
     
     def _init_supabase_client(self) -> Client:
         """Initialize Supabase client"""
-        url = os.getenv('SUPABASE_URL')
-        key = os.getenv('SUPABASE_SECRET_KEY')
-        
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SECRET_KEY")
+        print("Initializing Supabase client with URL:", url, "and key:", key)
         if not url:
             raise ValueError("SUPABASE_URL environment variable is required")
         if not key:
             raise ValueError("SUPABASE_SECRET_KEY environment variable is required")
 
         try:
-            client = create_client(url, key)
+            client = create_client(supabase_url=url, supabase_key=key)
             logger.info("Supabase client initialized successfully")
             return client
         except Exception as e:
@@ -92,6 +92,20 @@ class DatabaseService:
             logger.error(f"Error saving document to database: {str(e)}")
             return None
     
+    def get_project(self, project_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get project configuration including GraphRAG settings"""
+        try:
+            response = self.supabase.table('projects').select('*').eq('id', project_id).eq('user_id', user_id).execute()
+            
+            if response.data and len(response.data) > 0:
+                return {"data": response.data[0]}
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error fetching project: {str(e)}")
+            return None
+
     def close(self):
         """Close Supabase client connection"""
         # Supabase client doesn't need explicit closing like psycopg2

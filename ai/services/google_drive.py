@@ -106,36 +106,7 @@ class GoogleDriveProcessor:
         """List all files in the folder matching the specified types"""
         if file_types is None:
             file_types = ['docx', 'google-docs']
-        
-        # Build query for file types
-        type_queries = []
-        for file_type in file_types:
-            if file_type.lower() == 'docx':
-                type_queries.append("mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'")
-            elif file_type.lower() == 'pdf':
-                type_queries.append("mimeType='application/pdf'")
-            elif file_type.lower() == 'txt':
-                type_queries.append("mimeType='text/plain'")
-            elif file_type.lower() == 'google-docs':
-                type_queries.append("mimeType='application/vnd.google-apps.document'")
-            elif file_type.lower() == 'google-sheets':
-                type_queries.append("mimeType='application/vnd.google-apps.spreadsheet'")
-            elif file_type.lower() == 'google-slides':
-                type_queries.append("mimeType='application/vnd.google-apps.presentation'")
-        
-        # If no specific file types requested, search for common document types
-        if not type_queries:
-            type_queries = [
-                "mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
-                "mimeType='application/pdf'",
-                "mimeType='text/plain'",
-                "mimeType='application/vnd.google-apps.document'",
-                "mimeType='application/vnd.google-apps.spreadsheet'",
-                "mimeType='application/vnd.google-apps.presentation'"
-            ]
-        
-        # Combine folder query with fijle type queries
-        type_query = " or ".join(type_queries)
+
         query = f"'{folder_id}' in parents"
         
         logger.info(f"Searching with query: {query}")

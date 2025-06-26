@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { dbService } from "@/lib/database"
 import { vectorService } from "@/lib/langchain"
 import { getSessionFromRequest } from "@/lib/session"
+import { projectService } from "@/services/projectService"
 
 export async function POST(
   request: NextRequest,
@@ -34,8 +35,20 @@ export async function POST(
       title: note.title || "Untitled Document",
       type: "text",
       content: note.content,
-      url: undefined,
+      url: note.id,
     }, projectId)
+
+    if (!source) {
+      return NextResponse.json({ error: "Failed to create source" }, { status: 500 })
+    }
+
+    // Handle project setup for first source
+    await projectService.handleFirstSourceInProject(
+      user.id,
+      projectId,
+      source,
+      note.content
+    )
 
     // Process document for vector search
     const result = await vectorService.addDocuments(source.id, note.content, {

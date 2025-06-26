@@ -162,8 +162,8 @@ export function SourcesPanel({
   }
 
   return (
-    <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-      <div className="p-4 border-b border-gray-200">
+    <div className="w-80 bg-white border-r border-gray-200 flex flex-col lg:w-[320px] md:w-[280px]">
+      <div className="p-4 border-b border-gray-200 lg:w-[320px] md:w-[280px]">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Sources</h2>
           <Button size="sm" onClick={() => setIsAddingSource(!isAddingSource)} className="flex items-center gap-2">
