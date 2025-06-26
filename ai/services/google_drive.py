@@ -96,9 +96,13 @@ class GoogleDriveProcessor:
         # https://drive.google.com/file/d/FILE_ID/view
         # https://drive.google.com/open?id=FILE_ID
         # https://drive.google.com/file/d/FILE_ID/edit
+        # https://docs.google.com/document/d/FILE_ID/edit
         
         if '/file/d/' in file_url:
             file_id = file_url.split('/file/d/')[1].split('/')[0]
+            return file_id
+        elif '/document/d/' in file_url:
+            file_id = file_url.split('/document/d/')[1].split('/')[0]
             return file_id
         elif '?id=' in file_url:
             file_id = file_url.split('?id=')[1].split('&')[0]
@@ -352,6 +356,7 @@ class GoogleDriveProcessor:
         try:
             # Extract file ID
             file_id = self._extract_file_id(file_url)
+            print("processing file_id", file_id)
             
             # Get Drive service
             service = self._get_drive_service(user_id)
