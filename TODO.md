@@ -1,7 +1,10 @@
 
-## editor: hỗ trợ hiển thị math
-
 ## Hỗ trợ upload file subapass blob
+
+## Research: có cách nào lưu trữ các file pickle trên subapass blob không?
+Hoặc chuyển qua lưu graph vào neo4j, lưu vector vào qrant
+
+## Trích xuất nguồn của đoạn trả lời:
 
 ## Khi tạo project => upload 1 note đầu tiên => phân tích content 
 để đưa ra nội dung DOMAIN + ENTITY phù hợp.
