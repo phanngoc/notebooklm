@@ -54,13 +54,14 @@ export async function POST(request: NextRequest) {
     let result: any
     
     if (isFile) {
+      console.log("Processing Google Drive file:", url)
       // Process single file
       result = await googleDriveClient.processFile({
         file_url: url,
         user_id: user.id,
         project_id: projectId
       })
-      
+      console.log("Processing result:", result)
       // If this is the first source, update project with file name
       if (isFirstSource && result.success) {
         try {
@@ -172,7 +173,10 @@ export async function GET(request: NextRequest) {
 }
 
 function isGoogleDriveFileUrl(url: string): boolean {
-  return url.includes('drive.google.com/file/d/') || url.includes('drive.google.com/open?id=')
+  return url.includes('drive.google.com/drive/folders/') || 
+          url.includes('drive.google.com/file/d/') ||
+          url.includes('drive.google.com/open?id=') ||
+          url.includes('docs.google.com/document')
 }
 
 function isGoogleDriveFolderUrl(url: string): boolean {

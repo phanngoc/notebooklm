@@ -41,10 +41,11 @@ export function SourcesPanel({
 
   const handleAddUrl = async () => {
     if (urlInput.trim()) {
-      // Check if it's a Google Drive URL (file or folder)
+      // Check if it's a Google Drive URL (file or folder) or Google Docs
       if (urlInput.includes('drive.google.com/drive/folders/') || 
           urlInput.includes('drive.google.com/file/d/') ||
-          urlInput.includes('drive.google.com/open?id=')) {
+          urlInput.includes('drive.google.com/open?id=') ||
+          urlInput.includes('docs.google.com/document')) {
         await handleGoogleDrive()
       } else {
         onAddDocument({
@@ -208,7 +209,7 @@ export function SourcesPanel({
                   onChange={(e) => setTitleInput(e.target.value)}
                 />
                 <Input
-                  placeholder="Enter website URL, Google Drive file, or folder link"
+                  placeholder="Enter website URL, Google Drive file/folder, or Google Docs link"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                 />
@@ -216,7 +217,7 @@ export function SourcesPanel({
                   {isLoading ? "Processing..." : "Add URL"}
                 </Button>
                 <p className="text-xs text-gray-500">
-                  Support: Website URLs, Google Drive folder sharing links (.docx files)
+                  Support: Website URLs, Google Drive folders (.docx files), Google Docs
                 </p>
               </TabsContent>
 

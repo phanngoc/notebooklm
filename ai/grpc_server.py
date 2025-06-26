@@ -300,7 +300,7 @@ class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
         """Process a single Google Drive file"""
         try:
             logger.info(f"Processing Google Drive file for user: {request.user_id}")
-            
+            print(f"ProcessFile: File URL: {request.file_url}")
             # Process file async
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -312,6 +312,7 @@ class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
                     request.project_id
                 )
             )
+            print(f"ProcessFile: Processing result: ", result)
             
             # Convert result to protobuf format
             processed_file = google_drive_pb2.ProcessedFile(
