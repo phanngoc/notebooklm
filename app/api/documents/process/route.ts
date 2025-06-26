@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
       content
     )
 
+    console.log("Project updated:", projectUpdated)
+
     // Process document for vector search
     const result = await vectorService.addDocuments(source.id, content, {
       title: source.title,

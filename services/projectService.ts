@@ -146,14 +146,14 @@ Format your response as JSON:
     try {
       // Check if this is the first source in the project
       const isFirstSource = await dbService.isFirstSourceInProject(userId, projectId)
-      
+      console.log("Is first source in project:", isFirstSource)
       if (!isFirstSource) {
         return false
       }
 
       // Try to generate project metadata using AI
       const generatedData = await this.generateProjectMetadata(source, content)
-      
+      console.log("Generated project metadata:", generatedData)
       let projectUpdateData
       if (generatedData) {
         // Use AI-generated metadata
@@ -168,7 +168,7 @@ Format your response as JSON:
         // Fallback to default configuration
         projectUpdateData = this.getDefaultProjectConfig(source)
       }
-
+      console.log("Project update data:", projectId, userId, projectUpdateData)
       // Update the project
       await dbService.updateProject(projectId, userId, projectUpdateData)
       

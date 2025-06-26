@@ -86,6 +86,7 @@ export class DatabaseService {
     entity_types?: string[] 
   }) {
     try {
+      console.log("Updating project:", projectId, "for user:", userId, "with updates:", updates)
       const { data, error } = await this.supabase
         .from("projects")
         .update({
@@ -150,16 +151,16 @@ export class DatabaseService {
         .eq("user_id", userId)
         .eq("project_id", projectId)
         .limit(1)
-
+      console.log("data, error:", data, error)
       if (error) {
         console.error("Error checking first source:", error)
-        throw error
+        return false
       }
 
-      return !data || data.length === 0
+      return !data || data.length === 1
     } catch (error) {
       console.error("Error checking first source:", error)
-      throw error
+      return false
     }
   }
 
