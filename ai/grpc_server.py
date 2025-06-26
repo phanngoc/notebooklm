@@ -296,6 +296,56 @@ class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
                 processed_files=[]
             )
     
+    def ProcessFile(self, request, context):
+        """Process a single Google Drive file"""
+        try:
+            logger.info(f"Processing Google Drive file for user: {request.user_id}")
+            
+            # Process file async
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            result = loop.run_until_complete(
+                google_drive_processor.process_file_async(
+                    request.file_url,
+                    request.user_id,
+                    request.project_id
+                )
+            )
+            
+            # Convert result to protobuf format
+            processed_file = google_drive_pb2.ProcessedFile(
+                file_name=result['processed_file']['file_name'],
+                file_id=result['processed_file']['file_id'],
+                source_id=result['processed_file']['source_id'],
+                success=result['processed_file']['success'],
+                error_message=result['processed_file']['error_message'],
+                markdown_content=result['processed_file']['markdown_content'][:1000],  # Truncate for response
+                file_size=result['processed_file']['file_size']
+            )
+            
+            return google_drive_pb2.ProcessFileResponse(
+                success=result['success'],
+                message=result['message'],
+                processed_file=processed_file
+            )
+            
+        except Exception as e:
+            logger.error(f"Error processing file: {str(e)}")
+            return google_drive_pb2.ProcessFileResponse(
+                success=False,
+                message=f"Error: {str(e)}",
+                processed_file=google_drive_pb2.ProcessedFile(
+                    file_name="Unknown",
+                    file_id="",
+                    source_id="",
+                    success=False,
+                    error_message=str(e),
+                    markdown_content="",
+                    file_size=0
+                )
+            )
+    
     def GetProcessingStatus(self, request, context):
         """Get status of folder processing"""
         try:

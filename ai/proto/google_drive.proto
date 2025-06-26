@@ -2,10 +2,13 @@ syntax = "proto3";
 
 package google_drive;
 
-// Service for processing Google Drive folders
+// Service for processing Google Drive folders and files
 service GoogleDriveService {
-  // Process a Google Drive folder - scan for docx files, convert to markdown, and index
+  // Process a Google Drive folder - scan for files, convert to markdown, and index
   rpc ProcessFolder(ProcessFolderRequest) returns (ProcessFolderResponse);
+  
+  // Process a single Google Drive file - convert to markdown and index
+  rpc ProcessFile(ProcessFileRequest) returns (ProcessFileResponse);
   
   // Get status of folder processing
   rpc GetProcessingStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -17,6 +20,20 @@ message ProcessFolderRequest {
   string user_id = 2;              // User ID for the request
   string project_id = 3;           // Project ID to associate documents with
   repeated string file_types = 4;  // File types to process (e.g., "docx", "pdf")
+}
+
+// Request to process a single Google Drive file
+message ProcessFileRequest {
+  string file_url = 1;             // Google Drive file URL
+  string user_id = 2;              // User ID for the request
+  string project_id = 3;           // Project ID to associate document with
+}
+
+// Response from file processing
+message ProcessFileResponse {
+  bool success = 1;
+  string message = 2;
+  ProcessedFile processed_file = 3; // Details of the processed file
 }
 
 // Response from folder processing

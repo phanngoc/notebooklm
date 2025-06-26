@@ -22,6 +22,18 @@ interface ProcessFolderRequest {
   file_types: string[]
 }
 
+interface ProcessFileRequest {
+  file_url: string
+  user_id: string
+  project_id: string
+}
+
+interface ProcessFileResponse {
+  success: boolean
+  message: string
+  processed_file: ProcessedFile
+}
+
 interface ProcessFolderResponse {
   success: boolean
   message: string
@@ -78,6 +90,19 @@ export class GoogleDriveClient {
     })
   }
 
+  async processFile(request: ProcessFileRequest): Promise<ProcessFileResponse> {
+    return new Promise((resolve, reject) => {
+      this.client.ProcessFile(request, (error: any, response: ProcessFileResponse) => {
+        if (error) {
+          console.error('Error processing file:', error)
+          reject(error)
+        } else {
+          resolve(response)
+        }
+      })
+    })
+  }
+
   async getProcessingStatus(taskId: string): Promise<GetStatusResponse> {
     return new Promise((resolve, reject) => {
       const request: GetStatusRequest = { task_id: taskId }
@@ -112,6 +137,8 @@ export function getGoogleDriveClient(): GoogleDriveClient {
 export type {
   ProcessFolderRequest,
   ProcessFolderResponse,
+  ProcessFileRequest,
+  ProcessFileResponse,
   ProcessedFile,
   GetStatusRequest,
   GetStatusResponse,
