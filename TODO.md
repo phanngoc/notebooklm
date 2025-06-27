@@ -48,3 +48,27 @@ https://github.com/mendableai/firecrawl?tab=readme-ov-file
 
 
 
+
+
+trong table source : thiết kế đa hình để lưu nguồn của sources => 
+để sync về sau 
+
+table column có 2 (url, type)
+
+
+type:
+application/vnd.google-apps.document
+url:
+https://drive.google.com/file/d/1JB4hR-by0ILrXpc4JQMtRpiMM9nizWV3U8U5YOIsh4Y/view
+
+type:
+application/vnd.google-apps.spreadsheet
+url:
+https://drive.google.com/file/d/1JB4hR-by0ILrXpc4JQMtRpiMM9nizWV3U8U5YOIsh4Y/view
+
+type:
+text
+url:
+note_id
+
+đánh index type + url 

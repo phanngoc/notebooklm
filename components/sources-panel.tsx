@@ -41,9 +41,12 @@ export function SourcesPanel({
 
   const handleAddUrl = async () => {
     if (urlInput.trim()) {
-      // Check if it's a Google Drive folder
-      if (urlInput.includes('drive.google.com/drive/folders/')) {
-        await handleGoogleDriveFolder()
+      // Check if it's a Google Drive URL (file or folder) or Google Docs
+      if (urlInput.includes('drive.google.com/drive/folders/') || 
+          urlInput.includes('drive.google.com/file/d/') ||
+          urlInput.includes('drive.google.com/open?id=') ||
+          urlInput.includes('docs.google.com/document')) {
+        await handleGoogleDrive()
       } else {
         onAddDocument({
           title: titleInput || `Website: ${urlInput}`,
@@ -58,7 +61,7 @@ export function SourcesPanel({
     }
   }
 
-  const handleGoogleDriveFolder = async () => {
+  const handleGoogleDrive = async () => {
     try {
       const response = await fetch('/api/google-drive/process', {
         method: 'POST',
@@ -75,17 +78,36 @@ export function SourcesPanel({
       const result = await response.json()
 
       if (result.success) {
-        setProcessingTaskId(result.taskId)
-        setProcessingStatus({
-          status: 'processing',
-          message: result.message,
-          totalFiles: result.filesFound || 0,
-          processedFiles: 0,
-          failedFiles: 0
-        })
-        
-        // Start polling for status
-        pollProcessingStatus(result.taskId)
+        if (result.type === 'file') {
+          // Handle single file processing (immediate response)
+          setProcessingStatus({
+            status: 'completed',
+            message: result.message,
+            totalFiles: 1,
+            processedFiles: 1,
+            failedFiles: 0
+          })
+          
+          // Clear the processing status after a short delay
+          setTimeout(() => {
+            setProcessingStatus(null)
+            setProcessingTaskId(null)
+          }, 3000)
+          
+        } else {
+          // Handle folder processing (async with task ID)
+          setProcessingTaskId(result.taskId)
+          setProcessingStatus({
+            status: 'processing',
+            message: result.message,
+            totalFiles: result.filesFound || 0,
+            processedFiles: 0,
+            failedFiles: 0
+          })
+          
+          // Start polling for status
+          pollProcessingStatus(result.taskId)
+        }
         
         setUrlInput("")
         setTitleInput("")
@@ -94,8 +116,8 @@ export function SourcesPanel({
         alert(`Error: ${result.error}`)
       }
     } catch (error) {
-      console.error('Error processing Google Drive folder:', error)
-      alert('Failed to process Google Drive folder')
+      console.error('Error processing Google Drive content:', error)
+      alert('Failed to process Google Drive content')
     }
   }
 
@@ -187,7 +209,7 @@ export function SourcesPanel({
                   onChange={(e) => setTitleInput(e.target.value)}
                 />
                 <Input
-                  placeholder="Enter website URL or Google Drive folder link"
+                  placeholder="Enter website URL, Google Drive file/folder, or Google Docs link"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                 />
@@ -195,7 +217,7 @@ export function SourcesPanel({
                   {isLoading ? "Processing..." : "Add URL"}
                 </Button>
                 <p className="text-xs text-gray-500">
-                  Support: Website URLs, Google Drive folder sharing links (.docx files)
+                  Support: Website URLs, Google Drive folders (.docx files), Google Docs
                 </p>
               </TabsContent>
 

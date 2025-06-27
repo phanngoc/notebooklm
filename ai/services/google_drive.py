@@ -90,6 +90,26 @@ class GoogleDriveProcessor:
         
         raise Exception("Google Drive credentials not found. Please configure credentials in your profile settings.")
     
+    def _extract_file_id(self, file_url: str) -> str:
+        """Extract file ID from Google Drive URL"""
+        # Handle different URL formats:
+        # https://drive.google.com/file/d/FILE_ID/view
+        # https://drive.google.com/open?id=FILE_ID
+        # https://drive.google.com/file/d/FILE_ID/edit
+        # https://docs.google.com/document/d/FILE_ID/edit
+        
+        if '/file/d/' in file_url:
+            file_id = file_url.split('/file/d/')[1].split('/')[0]
+            return file_id
+        elif '/document/d/' in file_url:
+            file_id = file_url.split('/document/d/')[1].split('/')[0]
+            return file_id
+        elif '?id=' in file_url:
+            file_id = file_url.split('?id=')[1].split('&')[0]
+            return file_id
+        else:
+            raise ValueError("Invalid Google Drive file URL format")
+    
     def _extract_folder_id(self, folder_url: str) -> str:
         """Extract folder ID from Google Drive URL"""
         # Handle different URL formats:
@@ -140,7 +160,7 @@ class GoogleDriveProcessor:
         logger.info(f"Found {len(files)} total files in folder {folder_id}")
         return files
     
-    def _download_file(self, service, file_id: str, mime_type: str = None) -> bytes:
+    def _download_file(self, service, file_id: str, mime_type: Optional[str] = None) -> bytes:
         """Download file content from Google Drive"""
         try:
             # First, try to get the file metadata to check the MIME type
@@ -179,7 +199,7 @@ class GoogleDriveProcessor:
             logger.error(f"Error downloading file {file_id}: {str(e)}")
             raise
     
-    def _convert_to_markdown(self, file_content: bytes, file_name: str, original_mime_type: str = None) -> str:
+    def _convert_to_markdown(self, file_content: bytes, file_name: str, original_mime_type: Optional[str] = None) -> str:
         """Convert document content to markdown using docling"""
         try:
             # Determine file extension based on original MIME type
@@ -331,7 +351,51 @@ class GoogleDriveProcessor:
         
         return result
     
-    async def process_folder_async(self, folder_url: str, user_id: str, 
+    async def process_file_async(self, file_url: str, user_id: str, project_id: str) -> Dict[str, Any]:
+        """Process a single Google Drive file"""
+        try:
+            # Extract file ID
+            file_id = self._extract_file_id(file_url)
+            print("processing file_id", file_id)
+            
+            # Get Drive service
+            service = self._get_drive_service(user_id)
+            
+            # Get file metadata
+            file_metadata = service.files().get(
+                fileId=file_id, 
+                fields='id,name,size,mimeType,createdTime'
+            ).execute()
+            
+            logger.info(f"Processing single file: {file_metadata['name']}")
+            
+            # Process the file
+            result = self._process_single_file(service, file_metadata, user_id, project_id)
+            
+            return {
+                'success': result['success'],
+                'message': f"File processing {'completed' if result['success'] else 'failed'}",
+                'processed_file': result
+            }
+            
+        except Exception as e:
+            error_msg = f"Error processing file: {str(e)}"
+            logger.error(error_msg)
+            return {
+                'success': False,
+                'message': error_msg,
+                'processed_file': {
+                    'file_name': 'Unknown',
+                    'file_id': '',
+                    'success': False,
+                    'error_message': str(e),
+                    'source_id': '',
+                    'markdown_content': '',
+                    'file_size': 0
+                }
+            }
+    
+    async def process_folder_async(self, folder_url: str, user_id: str,
                                  project_id: str, file_types: Optional[List[str]] = None) -> str:
         """Process Google Drive folder asynchronously"""
         task_id = str(uuid.uuid4())
