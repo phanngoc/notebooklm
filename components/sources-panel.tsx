@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Document } from "@/types"
 import { FileText, Globe, Type, Trash2, Plus } from "lucide-react"
+import { useAppStore } from "@/hooks/use-app-store"
 
 interface SourcesPanelProps {
   documents: Document[]
@@ -38,6 +39,11 @@ export function SourcesPanel({
     processedFiles: number
     failedFiles: number
   } | null>(null)
+
+  const {
+      addDocument,
+    } = useAppStore()
+  
 
   const handleAddUrl = async () => {
     if (urlInput.trim()) {
@@ -76,7 +82,7 @@ export function SourcesPanel({
       })
 
       const result = await response.json()
-
+      console.log('Google Drive processing result:', result)
       if (result.success) {
         if (result.type === 'file') {
           // Handle single file processing (immediate response)
@@ -87,7 +93,18 @@ export function SourcesPanel({
             processedFiles: 1,
             failedFiles: 0
           })
-          
+
+          const document: Document = {
+            id: result.source.id,
+            title: result.source.title || "Google Drive Document",
+            type: "google-drive",
+            content: result.source.content.substring(0, 200) || "",
+            url: result.source.url,
+            selected: false,
+            createdAt: new Date(),
+          }
+          addDocument(document)
+
           // Clear the processing status after a short delay
           setTimeout(() => {
             setProcessingStatus(null)

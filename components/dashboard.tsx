@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { SourcesPanel } from "@/components/sources-panel"
 import { ChatPanel } from "@/components/chat-panel"
@@ -24,6 +24,7 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
   const [isInitializing, setIsInitializing] = useState(true)
   const { toast } = useToast()
   const [isStudioExpanded, setIsStudioExpanded] = useState(false)
+  const hasInitialized = useRef(false)
   
   // Use unified Zustand store
   const {
@@ -53,8 +54,6 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
     convertNoteToSource,
     
     // Project and user info
-    projectName,
-    userName,
     setProjectName,
     setUserName,
     
@@ -95,7 +94,9 @@ export default function Dashboard({ userId, projectId, authLoading }: DashboardP
   }, [notesError, toast])
 
   useEffect(() => {
-    if (userId && projectId) {
+    if (userId && projectId && !hasInitialized.current) {
+      console.log("Initializing dashboard for user:", userId, "project:", projectId)
+      hasInitialized.current = true
       loadUserData(userId, projectId)
     }
   }, [userId, projectId])

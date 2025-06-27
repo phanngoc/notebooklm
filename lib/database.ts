@@ -164,6 +164,48 @@ export class DatabaseService {
     }
   }
 
+  async getFirstSourceInProject(userId: string, projectId: string, id: string | null = null): Promise<Document | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from("sources")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("project_id", projectId)
+        .eq("id", id)
+        .limit(1)
+      console.log("data, error:", data, error)
+      if (error) {
+        console.error("Error checking first source:", error)
+        return null
+      }
+
+      return data[0] || null;
+    } catch (error) {
+      console.error("Error checking first source:", error)
+      return null
+    }
+  }
+
+  async getSource(id: string | null = null): Promise<Document | null> {
+    try {
+      const { data, error } = await this.supabase
+        .from("sources")
+        .select("*")
+        .eq("id", id)
+        .limit(1)
+      console.log("data, error:", data, error)
+      if (error) {
+        console.error("Error checking first source:", error)
+        return null
+      }
+
+      return data[0] || null;
+    } catch (error) {
+      console.error("Error checking first source:", error)
+      return null
+    }
+  }
+
   async addSource(userId: string, source: Omit<Document, "id" | "selected" | "createdAt">, projectId?: string) {
     try {
       const { data, error } = await this.supabase
