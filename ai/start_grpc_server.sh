@@ -5,10 +5,6 @@ cd "$(dirname "$0")"
 
 echo "Setting up Python gRPC server..."
 
-# Install Python dependencies
-echo "Installing Python dependencies..."
-pip install -r requirements.txt
-
 mkdir -p ./data
 
 # Generate protobuf files
