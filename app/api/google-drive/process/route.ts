@@ -45,9 +45,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Check if this is the first source in the project
-    const isFirstSource = await dbService.isFirstSourceInProject(user.id, projectId)
-
     // Get Google Drive client and start processing
     const googleDriveClient = getGoogleDriveClient()
     
@@ -63,6 +60,8 @@ export async function POST(request: NextRequest) {
       })
       console.log("Processing result:", result)
       // If this is the first source, update project with file name
+      const source = await dbService.getSource(result.processed_file?.source_id)
+      const isFirstSource = await dbService.isFirstSourceInProject(user.id, projectId)
       if (isFirstSource && result.success) {
         try {
           const fileName = result.processed_file?.file_name || 'Unknown File'
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
         success: result.success,
         message: result.message,
         processedFile: result.processed_file,
-        projectUpdated: isFirstSource,
+        source: source,
         type: 'file'
       })
       
@@ -92,13 +91,14 @@ export async function POST(request: NextRequest) {
         project_id: projectId,
         file_types: fileTypes || ['docx']
       })
-      
+      console.log("Processing folder result:", result)
       if (!result.success) {
         return NextResponse.json({
           error: result.message || "Failed to start folder processing"
         }, { status: 500 })
       }
 
+      const isFirstSource = await dbService.isFirstSourceInProject(user.id, projectId)
       // If this is the first source, update project with a temporary name
       if (isFirstSource) {
         try {
