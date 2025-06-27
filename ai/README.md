@@ -32,10 +32,23 @@ pip install -r requirements.txt
 
 ## Chạy server
 
-### Sử dụng script
+### Chạy cho development.
+
+Cài đặt entr:
 
 ```bash
-./start_grpc_server.sh
+# Ubuntu/Debian
+sudo apt install entr
+
+# macOS
+brew install entr
+
+# Arch Linux
+sudo pacman -S entr
+```
+
+```bash
+./dev_server.sh
 ```
 
 ### Sử dụng Docker

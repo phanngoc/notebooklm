@@ -117,7 +117,6 @@ class GraphRAGService:
 
             # Insert content into GraphRAG - handle async/sync properly
             try:
-                # Fallback to sync version
                 grag.insert(content)
             except Exception as inner_e:
                 logger.warning(f"Insert failed: {inner_e}, trying sync version")
