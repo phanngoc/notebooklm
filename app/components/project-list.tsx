@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -16,17 +16,23 @@ interface Project {
 export default function ProjectList({ userId }: { userId: string }) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
+  const hasFetched = useRef(false)
   const router = useRouter()
-
+  console.log("ProjectList rendered with userId:", userId)
+  
   useEffect(() => {
     const fetchProjects = async () => {
+      if (hasFetched.current) return
+      
       try {
+        hasFetched.current = true
         const response = await fetch(`/api/projects`)
         const data = await response.json()
         console.log("Fetched projects:", data)
         setProjects(data)
       } catch (error) {
         console.error("Error fetching projects:", error)
+        hasFetched.current = false // Reset on error để có thể retry
       } finally {
         setLoading(false)
       }
