@@ -161,10 +161,6 @@ class GraphRAGService:
                 'entities_extracted': 0,
                 'relationships_extracted': 0
             }
-    
-    def _run_async_insert(self, grag, content: str):
-        """Helper method to run async insert in a new event loop"""
-        asyncio.run(grag.ainsert(content))
         
     def _run_async_insert_alt(self, grag, content: str):
         """Helper method to run async insert (alternative method) in a new event loop"""

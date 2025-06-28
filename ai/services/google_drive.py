@@ -207,7 +207,7 @@ class GoogleDriveProcessor:
             logger.error(f"Error downloading file {file_id}: {str(e)}")
             raise
     
-    def _convert_to_markdown(self, file_content: bytes, file_name: str, original_mime_type: Optional[str] = None) -> str:
+    def _convert_to_markdown(self, file_content: bytes, file_name: str, project_id: str, original_mime_type: Optional[str] = None) -> str:
         """Convert document content to markdown using docling"""
         try:
             # Determine file extension based on original MIME type
@@ -227,8 +227,19 @@ class GoogleDriveProcessor:
                 # Use original file extension or guess from content
                 file_extension = os.path.splitext(file_name)[1] or '.docx'
             
-            # Generate unique temp filename
-            temp_file_path = f"/tmp/{uuid.uuid4()}_{os.path.splitext(file_name)[0]}{file_extension}"
+            # Create uploads directory structure: ai/uploads/{project_id}/
+            uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
+            project_uploads_dir = os.path.join(uploads_dir, project_id)
+            os.makedirs(project_uploads_dir, exist_ok=True)
+            
+            # Generate filename with original name and proper extension
+            clean_filename = f"{os.path.splitext(file_name)[0]}{file_extension}"
+            temp_file_path = os.path.join(project_uploads_dir, clean_filename)
+            
+            # If file already exists, add UUID to make it unique
+            if os.path.exists(temp_file_path):
+                base_name = os.path.splitext(clean_filename)[0]
+                temp_file_path = os.path.join(project_uploads_dir, f"{base_name}_{uuid.uuid4()}{file_extension}")
             
             with open(temp_file_path, 'wb') as temp_file:
                 temp_file.write(file_content)
@@ -251,7 +262,8 @@ class GoogleDriveProcessor:
             finally:
                 # Clean up temporary file
                 if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
+                    print("Removing temporary file:", temp_file_path)
+                    # os.remove(temp_file_path)
                     
         except Exception as e:
             logger.error(f"Error converting {file_name} to markdown: {str(e)}")
@@ -346,6 +358,7 @@ class GoogleDriveProcessor:
             markdown_content = self._convert_to_markdown(
                 file_content, 
                 file_info['name'], 
+                project_id,
                 file_info.get('mimeType')
             )
             result['markdown_content'] = markdown_content
@@ -426,10 +439,10 @@ class GoogleDriveProcessor:
         """Process Google Drive folder asynchronously"""
         task_id = str(uuid.uuid4())
         
-        # Initialize task status
+        # Initialize task status with minimal info
         self.processing_tasks[task_id] = {
-            'status': 'processing',
-            'message': 'Starting folder processing...',
+            'status': 'initializing',
+            'message': 'Initializing folder processing...',
             'total_files': 0,
             'processed_files': 0,
             'failed_files': 0,
@@ -437,17 +450,22 @@ class GoogleDriveProcessor:
             'created_at': datetime.now()
         }
         
-        # Start async processing
-        asyncio.create_task(self._process_folder_task(
+        # Submit the task to thread pool executor for true background processing
+        self.executor.submit(
+            self._process_folder_task_sync,
             task_id, folder_url, user_id, project_id, file_types
-        ))
+        )
         
         return task_id
     
-    async def _process_folder_task(self, task_id: str, folder_url: str, 
-                                 user_id: str, project_id: str, file_types: Optional[List[str]] = None):
-        """Background task to process the folder"""
+    def _process_folder_task_sync(self, task_id: str, folder_url: str, 
+                                user_id: str, project_id: str, file_types: Optional[List[str]] = None):
+        """Synchronous background processing - không cần event loop"""
         try:
+            # Update status to processing
+            self.processing_tasks[task_id]['status'] = 'processing'
+            self.processing_tasks[task_id]['message'] = 'Connecting to Google Drive...'
+            
             # Extract folder ID
             folder_id = self._extract_folder_id(folder_url)
             
@@ -457,7 +475,7 @@ class GoogleDriveProcessor:
             # List files
             self.processing_tasks[task_id]['message'] = 'Scanning folder for files...'
             files = self._list_folder_files(service, folder_id, file_types)
-            print("files", files, len(files))
+            
             self.processing_tasks[task_id].update({
                 'total_files': len(files),
                 'message': f'Found {len(files)} files. Processing...'

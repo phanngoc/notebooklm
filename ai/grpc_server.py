@@ -255,6 +255,10 @@ class GraphRAGServicer(graphrag_pb2_grpc.GraphRAGServiceServicer):
 # Initialize Google Drive processor
 google_drive_processor = GoogleDriveProcessor()
 
+# Start async processing - this should return immediately with task_id
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
     """Google Drive service implementation"""
     
@@ -262,10 +266,6 @@ class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
         """Process a Google Drive folder"""
         try:
             logger.info(f"Processing Google Drive folder for user: {request.user_id}")
-            
-            # Start async processing
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
             
             task_id = loop.run_until_complete(
                 google_drive_processor.process_folder_async(
@@ -275,6 +275,8 @@ class GoogleDriveServicer(google_drive_pb2_grpc.GoogleDriveServiceServicer):
                     list(request.file_types) if request.file_types else None
                 )
             )
+
+            logger.info(f"Created processing task with ID: {task_id}")
             
             return google_drive_pb2.ProcessFolderResponse(
                 success=True,

@@ -85,13 +85,19 @@ export async function POST(request: NextRequest) {
       
     } else {
       // Process folder
+      console.log("Starting Google Drive folder processing:", url)
+      const startTime = Date.now()
+      
       result = await googleDriveClient.processFolder({
         folder_url: url,
         user_id: user.id,
         project_id: projectId,
         file_types: fileTypes || ['docx', 'google-sheets']
       })
-      console.log("Processing folder result:", result)
+      
+      const endTime = Date.now()
+      console.log(`Processing folder result (took ${endTime - startTime}ms):`, result)
+      
       if (!result.success) {
         return NextResponse.json({
           error: result.message || "Failed to start folder processing"

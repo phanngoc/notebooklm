@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
@@ -39,10 +39,26 @@ export function SourcesPanel({
     processedFiles: number
     failedFiles: number
   } | null>(null)
+  
+  // Ref to store the polling interval and timeout so we can clear them
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const {
       addDocument,
     } = useAppStore()
+  
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current)
+      }
+    }
+  }, [])
   
 
   const handleAddUrl = async () => {
@@ -117,15 +133,24 @@ export function SourcesPanel({
           // Handle folder processing (async with task ID)
           setProcessingTaskId(result.taskId)
           setProcessingStatus({
-            status: 'processing',
-            message: result.message,
+            status: 'initializing',
+            message: 'Initializing folder processing...',
             totalFiles: result.filesFound || 0,
             processedFiles: 0,
             failedFiles: 0
           })
           
-          // Start polling for status
-          pollProcessingStatus(result.taskId)
+          // Start polling for status after a small delay
+          setTimeout(() => {
+            setProcessingStatus({
+              status: 'processing',
+              message: result.message,
+              totalFiles: result.filesFound || 0,
+              processedFiles: 0,
+              failedFiles: 0
+            })
+            pollProcessingStatus(result.taskId)
+          }, 1000) // Wait 1 second before starting to poll
         }
         
         setUrlInput("")
@@ -140,11 +165,54 @@ export function SourcesPanel({
     }
   }
 
+  const cancelProcessing = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+      pollIntervalRef.current = null
+    }
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current)
+      pollTimeoutRef.current = null
+    }
+    setProcessingTaskId(null)
+    setProcessingStatus(null)
+  }
+
   const pollProcessingStatus = async (taskId: string) => {
-    const pollInterval = setInterval(async () => {
+    console.log('Starting to poll status for task:', taskId)
+    
+    // Clear any existing polling interval and timeout
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current)
+    }
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current)
+    }
+    
+    // Set a timeout to stop polling after 10 minutes
+    pollTimeoutRef.current = setTimeout(() => {
+      console.log('Polling timeout reached for task:', taskId)
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      setProcessingTaskId(null)
+      setProcessingStatus({
+        status: 'failed',
+        message: 'Processing timeout - took longer than expected',
+        totalFiles: 0,
+        processedFiles: 0,
+        failedFiles: 0
+      })
+    }, 10 * 60 * 1000) // 10 minutes
+    
+    pollIntervalRef.current = setInterval(async () => {
       try {
+        console.log('Polling status for task:', taskId)
         const response = await fetch(`/api/google-drive/process?taskId=${taskId}`)
         const status = await response.json()
+
+        console.log('Polling response:', status)
 
         if (status.success) {
           setProcessingStatus({
@@ -157,19 +225,60 @@ export function SourcesPanel({
 
           // Stop polling if completed or failed
           if (status.status === 'completed' || status.status === 'failed') {
-            clearInterval(pollInterval)
+            console.log('Polling completed with status:', status.status)
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current)
+              pollIntervalRef.current = null
+            }
+            if (pollTimeoutRef.current) {
+              clearTimeout(pollTimeoutRef.current)
+              pollTimeoutRef.current = null
+            }
             setProcessingTaskId(null)
             
             if (status.status === 'completed') {
               // Refresh documents list
+              console.log('Processing completed, refreshing page...')
               window.location.reload() // TODO: Better way to refresh
             }
           }
+        } else {
+          console.error('Polling failed:', status)
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current)
+            pollIntervalRef.current = null
+          }
+          if (pollTimeoutRef.current) {
+            clearTimeout(pollTimeoutRef.current)
+            pollTimeoutRef.current = null
+          }
+          setProcessingTaskId(null)
+          setProcessingStatus({
+            status: 'failed',
+            message: status.error || 'Failed to get processing status',
+            totalFiles: 0,
+            processedFiles: 0,
+            failedFiles: 0
+          })
         }
       } catch (error) {
         console.error('Error polling status:', error)
-        clearInterval(pollInterval)
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current)
+          pollIntervalRef.current = null
+        }
+        if (pollTimeoutRef.current) {
+          clearTimeout(pollTimeoutRef.current)
+          pollTimeoutRef.current = null
+        }
         setProcessingTaskId(null)
+        setProcessingStatus({
+          status: 'failed',
+          message: 'Network error while checking status',
+          totalFiles: 0,
+          processedFiles: 0,
+          failedFiles: 0
+        })
       }
     }, 2000) // Poll every 2 seconds
   }
@@ -266,15 +375,70 @@ export function SourcesPanel({
 
         {/* Processing Status Display */}
         {processingTaskId && processingStatus && (
-          <Card className="p-4 mb-4 bg-blue-50 border-blue-200">
+          <Card className={`p-4 mb-4 ${
+            processingStatus.status === 'failed' 
+              ? 'bg-red-50 border-red-200' 
+              : processingStatus.status === 'completed'
+              ? 'bg-green-50 border-green-200'
+              : 'bg-blue-50 border-blue-200'
+          }`}>
             <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-                <span className="text-sm font-medium text-blue-800">Processing Google Drive Folder</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {processingStatus.status === 'failed' ? (
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                  ) : processingStatus.status === 'completed' ? (
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  ) : (
+                    <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                  )}
+                  <span className={`text-sm font-medium ${
+                    processingStatus.status === 'failed' 
+                      ? 'text-red-800' 
+                      : processingStatus.status === 'completed'
+                      ? 'text-green-800'
+                      : 'text-blue-800'
+                  }`}>
+                    {processingStatus.status === 'initializing' 
+                      ? 'Initializing Google Drive Processing...'
+                      : processingStatus.status === 'processing'
+                      ? 'Processing Google Drive Folder...'
+                      : processingStatus.status === 'completed'
+                      ? 'Processing Completed!'
+                      : processingStatus.status === 'failed'
+                      ? 'Processing Failed'
+                      : 'Processing Google Drive Folder'
+                    }
+                  </span>
+                </div>
+                {(processingStatus.status === 'processing' || processingStatus.status === 'initializing') && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={cancelProcessing}
+                    className="text-gray-500 hover:text-red-600 p-1 h-auto"
+                  >
+                    Cancel
+                  </Button>
+                )}
               </div>
-              <p className="text-xs text-blue-600">{processingStatus.message}</p>
-              {processingStatus.totalFiles > 0 && (
-                <div className="text-xs text-blue-600">
+              <p className={`text-xs ${
+                processingStatus.status === 'failed' 
+                  ? 'text-red-600' 
+                  : processingStatus.status === 'completed'
+                  ? 'text-green-600'
+                  : 'text-blue-600'
+              }`}>
+                {processingStatus.message}
+              </p>
+              {processingStatus.totalFiles > 0 && processingStatus.status !== 'initializing' && (
+                <div className={`text-xs ${
+                  processingStatus.status === 'failed' 
+                    ? 'text-red-600' 
+                    : processingStatus.status === 'completed'
+                    ? 'text-green-600'
+                    : 'text-blue-600'
+                }`}>
                   Progress: {processingStatus.processedFiles + processingStatus.failedFiles} / {processingStatus.totalFiles} files
                   {processingStatus.failedFiles > 0 && (
                     <span className="text-red-600 ml-2">({processingStatus.failedFiles} failed)</span>
