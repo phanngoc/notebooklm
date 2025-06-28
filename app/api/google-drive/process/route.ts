@@ -176,7 +176,8 @@ function isGoogleDriveFileUrl(url: string): boolean {
   return url.includes('drive.google.com/drive/folders/') || 
           url.includes('drive.google.com/file/d/') ||
           url.includes('drive.google.com/open?id=') ||
-          url.includes('docs.google.com/document')
+          url.includes('docs.google.com/document') ||
+          url.includes('docs.google.com/presentation')
 }
 
 function isGoogleDriveFolderUrl(url: string): boolean {

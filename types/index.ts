@@ -1,7 +1,7 @@
 export interface Document {
   id: string
   title: string
-  type: "google-doc" | "google-drive" | "website" | "text" | "pdf" | "document" | "markdown" | "spreadsheet" | "data" | "webpage" | "unknown"
+  type: "google-doc" | "google-slide" | "google-drive" | "website" | "text" | "pdf" | "document" | "markdown" | "spreadsheet" | "data" | "webpage" | "unknown"
   content: string
   url?: string
   selected: boolean

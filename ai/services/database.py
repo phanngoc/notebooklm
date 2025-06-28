@@ -66,7 +66,7 @@ class DatabaseService:
     
     def save_document_to_db(self, user_id: str, project_id: str, title: str, 
                            content: str, doc_type: str = 'google-doc', 
-                           url: Optional[str] = None) -> Optional[str]:
+                           url: Optional[str] = None, mime_type: Optional[str] = None) -> Optional[str]:
         """Save a document to the sources table and return source ID"""
         try:
             # Prepare document data
@@ -76,7 +76,8 @@ class DatabaseService:
                 'title': title,
                 'type': doc_type,
                 'content': content,
-                'url': url
+                'url': url,
+                'mime_type': mime_type
             }
             
             response = self.supabase.table('sources').insert(document_data).execute()

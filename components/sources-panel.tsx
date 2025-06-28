@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Document } from "@/types"
-import { FileText, Globe, Type, Trash2, Plus } from "lucide-react"
+import { FileText, Globe, Type, Trash2, Plus, Presentation } from "lucide-react"
 import { useAppStore } from "@/hooks/use-app-store"
 
 interface SourcesPanelProps {
@@ -47,11 +47,12 @@ export function SourcesPanel({
 
   const handleAddUrl = async () => {
     if (urlInput.trim()) {
-      // Check if it's a Google Drive URL (file or folder) or Google Docs
+      // Check if it's a Google Drive URL (file or folder), Google Docs, or Google Slides
       if (urlInput.includes('drive.google.com/drive/folders/') || 
           urlInput.includes('drive.google.com/file/d/') ||
           urlInput.includes('drive.google.com/open?id=') ||
-          urlInput.includes('docs.google.com/document')) {
+          urlInput.includes('docs.google.com/document') ||
+          urlInput.includes('docs.google.com/presentation')) {
         await handleGoogleDrive()
       } else {
         onAddDocument({
@@ -189,6 +190,8 @@ export function SourcesPanel({
     switch (type) {
       case "google-doc":
         return <FileText className="w-4 h-4 text-blue-600" />
+      case "google-slide":
+        return <Presentation className="w-4 h-4 text-orange-600" />
       case "google-drive":
         return <FileText className="w-4 h-4 text-blue-500" />
       case "website":
@@ -226,7 +229,7 @@ export function SourcesPanel({
                   onChange={(e) => setTitleInput(e.target.value)}
                 />
                 <Input
-                  placeholder="Enter website URL, Google Drive file/folder, or Google Docs link"
+                  placeholder="Enter website URL, Google Drive file/folder, Google Docs, or Google Slides link"
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
                 />
@@ -234,7 +237,7 @@ export function SourcesPanel({
                   {isLoading ? "Processing..." : "Add URL"}
                 </Button>
                 <p className="text-xs text-gray-500">
-                  Support: Website URLs, Google Drive folders (.docx files), Google Docs
+                  Support: Website URLs, Google Drive folders (.docx files), Google Docs, Google Slides
                 </p>
               </TabsContent>
 

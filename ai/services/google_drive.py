@@ -97,12 +97,16 @@ class GoogleDriveProcessor:
         # https://drive.google.com/open?id=FILE_ID
         # https://drive.google.com/file/d/FILE_ID/edit
         # https://docs.google.com/document/d/FILE_ID/edit
+        # https://docs.google.com/presentation/d/FILE_ID/edit
         
         if '/file/d/' in file_url:
             file_id = file_url.split('/file/d/')[1].split('/')[0]
             return file_id
         elif '/document/d/' in file_url:
             file_id = file_url.split('/document/d/')[1].split('/')[0]
+            return file_id
+        elif '/presentation/d/' in file_url:
+            file_id = file_url.split('/presentation/d/')[1].split('/')[0]
             return file_id
         elif '?id=' in file_url:
             file_id = file_url.split('?id=')[1].split('&')[0]
@@ -263,17 +267,35 @@ class GoogleDriveProcessor:
             return f"# {file_name}\n\n*Error: Could not convert this document to markdown. Original error: {str(e)}*"
     
     def _save_to_database(self, user_id: str, project_id: str, file_info: Dict[str, Any], 
-                         markdown_content: str) -> str:
+                         markdown_content: str, original_url: Optional[str] = None) -> str:
         """Save document to database and return source ID"""
         try:
+            # Determine document type based on MIME type
+            mime_type = file_info.get('mimeType', 'unknown')
+            doc_type = 'google-doc'  # default
+            
+            if mime_type == 'application/vnd.google-apps.document':
+                doc_type = 'google-doc'
+            elif mime_type == 'application/vnd.google-apps.presentation':
+                doc_type = 'google-slide'
+            elif mime_type == 'application/vnd.google-apps.spreadsheet':
+                doc_type = 'google-doc'  # or create 'google-sheet' if needed
+            else:
+                # For other file types from Drive
+                doc_type = 'google-drive'
+            
+            # Use original URL if provided, otherwise construct from file ID
+            final_url = original_url or f"https://drive.google.com/file/d/{file_info['id']}/view"
+            
             # Save document directly to database
             source_id = self.db_service.save_document_to_db(
                 user_id=user_id,
                 project_id=project_id,
                 title=file_info['name'],
                 content=markdown_content,
-                doc_type=file_info.get('mimeType', 'google-doc'),
-                url=f"https://drive.google.com/file/d/{file_info['id']}/view"
+                doc_type=doc_type,
+                url=final_url,
+                mime_type=mime_type
             )
             
             if source_id:
@@ -298,7 +320,7 @@ class GoogleDriveProcessor:
             return False
     
     def _process_single_file(self, service, file_info: Dict[str, Any], 
-                           user_id: str, project_id: str) -> Dict[str, Any]:
+                           user_id: str, project_id: str, original_url: Optional[str] = None) -> Dict[str, Any]:
         """Process a single file: download, convert, save, and index"""
         result = {
             'file_name': file_info['name'],
@@ -331,7 +353,7 @@ class GoogleDriveProcessor:
             
             # Save to database
             logger.info(f"Saving to database: {file_info['name']}")
-            source_id = self._save_to_database(user_id, project_id, file_info, markdown_content)
+            source_id = self._save_to_database(user_id, project_id, file_info, markdown_content, original_url)
             result['source_id'] = source_id
             
             # Index with GraphRAG
@@ -370,7 +392,7 @@ class GoogleDriveProcessor:
             logger.info(f"Processing single file: {file_metadata['name']}")
             
             # Process the file
-            result = self._process_single_file(service, file_metadata, user_id, project_id)
+            result = self._process_single_file(service, file_metadata, user_id, project_id, file_url)
             
             return {
                 'success': result['success'],
@@ -444,7 +466,7 @@ class GoogleDriveProcessor:
             
             for file_info in files:
                 try:
-                    result = self._process_single_file(service, file_info, user_id, project_id)
+                    result = self._process_single_file(service, file_info, user_id, project_id, None)
                     results.append(result)
                     
                     if result['success']:
