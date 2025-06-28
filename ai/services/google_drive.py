@@ -98,6 +98,7 @@ class GoogleDriveProcessor:
         # https://drive.google.com/file/d/FILE_ID/edit
         # https://docs.google.com/document/d/FILE_ID/edit
         # https://docs.google.com/presentation/d/FILE_ID/edit
+        # https://docs.google.com/spreadsheets/d/FILE_ID/edit
         
         if '/file/d/' in file_url:
             file_id = file_url.split('/file/d/')[1].split('/')[0]
@@ -107,6 +108,9 @@ class GoogleDriveProcessor:
             return file_id
         elif '/presentation/d/' in file_url:
             file_id = file_url.split('/presentation/d/')[1].split('/')[0]
+            return file_id
+        elif '/spreadsheets/d/' in file_url:
+            file_id = file_url.split('/spreadsheets/d/')[1].split('/')[0]
             return file_id
         elif '?id=' in file_url:
             file_id = file_url.split('?id=')[1].split('&')[0]
@@ -129,7 +133,7 @@ class GoogleDriveProcessor:
     def _list_folder_files(self, service, folder_id: str, file_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """List all files in the folder matching the specified types"""
         if file_types is None:
-            file_types = ['docx', 'google-docs']
+            file_types = ['docx', 'google-docs', 'google-sheets']
 
         query = f"'{folder_id}' in parents"
         
@@ -279,7 +283,7 @@ class GoogleDriveProcessor:
             elif mime_type == 'application/vnd.google-apps.presentation':
                 doc_type = 'google-slide'
             elif mime_type == 'application/vnd.google-apps.spreadsheet':
-                doc_type = 'google-doc'  # or create 'google-sheet' if needed
+                doc_type = 'spreadsheet'
             else:
                 # For other file types from Drive
                 doc_type = 'google-drive'

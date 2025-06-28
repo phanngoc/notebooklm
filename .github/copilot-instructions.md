@@ -175,27 +175,6 @@ Key tables:
 - Follow OWASP security practices
 - Use environment variables for secrets
 
-## Testing Approach
-- Write unit tests for utility functions
-- Test API endpoints with proper error scenarios
-- Use TypeScript for compile-time safety
-- Test user interactions in components
 
-## Development Workflow
-1. Check existing patterns before implementing new features
-2. Use the established service classes
-3. Follow the component structure guidelines
-4. Add proper TypeScript types
-5. Handle errors gracefully
-6. Test thoroughly before committing
-
-## Common Patterns to Follow
-
-
-### State Management
-- Use React hooks for local state
-- Pass data between components via props
-- Use context for global state when needed
-- Lift state up when sharing between siblings
 
 Remember to maintain consistency with the existing codebase and follow these established patterns when making changes or adding new features.

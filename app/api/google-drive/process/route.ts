@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
         folder_url: url,
         user_id: user.id,
         project_id: projectId,
-        file_types: fileTypes || ['docx']
+        file_types: fileTypes || ['docx', 'google-sheets']
       })
       console.log("Processing folder result:", result)
       if (!result.success) {
@@ -173,11 +173,11 @@ export async function GET(request: NextRequest) {
 }
 
 function isGoogleDriveFileUrl(url: string): boolean {
-  return url.includes('drive.google.com/drive/folders/') || 
-          url.includes('drive.google.com/file/d/') ||
+  return url.includes('drive.google.com/file/d/') ||
           url.includes('drive.google.com/open?id=') ||
           url.includes('docs.google.com/document') ||
-          url.includes('docs.google.com/presentation')
+          url.includes('docs.google.com/presentation') ||
+          url.includes('docs.google.com/spreadsheets')
 }
 
 function isGoogleDriveFolderUrl(url: string): boolean {
