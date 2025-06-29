@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { FileUpload } from "@/components/ui/file-upload"
 import type { Document } from "@/types"
 import { FileText, Globe, Type, Trash2, Plus, Presentation, Table } from "lucide-react"
 import { useAppStore } from "@/hooks/use-app-store"
+import { useAuth } from "@/hooks/use-auth"
 
 interface SourcesPanelProps {
   documents: Document[]
@@ -47,6 +49,8 @@ export function SourcesPanel({
   const {
       addDocument,
     } = useAppStore()
+  
+  const { user } = useAuth()
   
   // Cleanup polling on unmount
   useEffect(() => {
@@ -296,6 +300,28 @@ export function SourcesPanel({
     }
   }
 
+  const handleFileUploadComplete = (result: any) => {
+    if (result.success && result.source) {
+      const document: Document = {
+        id: result.source.id,
+        title: result.source.title,
+        type: result.source.type,
+        content: result.source.content.substring(0, 200) || "",
+        url: result.source.url,
+        selected: false,
+        createdAt: new Date(result.source.createdAt),
+      }
+      addDocument(document)
+      
+      // Close the add source panel after successful upload
+      setIsAddingSource(false)
+    }
+  }
+
+  const handleFileUploadError = (error: string) => {
+    console.error('File upload error:', error)
+  }
+
   const getIcon = (type: Document["type"]) => {
     switch (type) {
       case "google-doc":
@@ -310,6 +336,16 @@ export function SourcesPanel({
         return <Globe className="w-4 h-4 text-green-600" />
       case "text":
         return <Type className="w-4 h-4 text-purple-600" />
+      case "pdf":
+        return <FileText className="w-4 h-4 text-red-600" />
+      case "document":
+        return <FileText className="w-4 h-4 text-blue-600" />
+      case "markdown":
+        return <FileText className="w-4 h-4 text-green-600" />
+      case "data":
+        return <FileText className="w-4 h-4 text-orange-600" />
+      case "webpage":
+        return <Globe className="w-4 h-4 text-blue-600" />
       default:
         return <FileText className="w-4 h-4 text-gray-600" />
     }
@@ -328,11 +364,29 @@ export function SourcesPanel({
 
         {isAddingSource && (
           <Card className="p-4 mb-4">
-            <Tabs defaultValue="url" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="url">URL / Google Drive</TabsTrigger>
+            <Tabs defaultValue="files" className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="files">Files</TabsTrigger>
+                <TabsTrigger value="url">URL / Drive</TabsTrigger>
                 <TabsTrigger value="text">Text</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="files" className="space-y-3">
+                {user && projectId && (
+                  <FileUpload
+                    projectId={projectId}
+                    userId={user.id}
+                    onUploadComplete={handleFileUploadComplete}
+                    onUploadError={handleFileUploadError}
+                    maxFiles={10}
+                  />
+                )}
+                {!user && (
+                  <div className="text-center py-4 text-gray-500">
+                    Please log in to upload files
+                  </div>
+                )}
+              </TabsContent>
 
               <TabsContent value="url" className="space-y-3">
                 <Input

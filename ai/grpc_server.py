@@ -20,6 +20,8 @@ from mem0 import Memory
 from dotenv import load_dotenv
 from services.graphrag import GraphRAGService
 from services.google_drive import GoogleDriveProcessor
+from services.file_processor import file_processor
+from services.database import get_db_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -218,6 +220,70 @@ class GraphRAGServicer(graphrag_pb2_grpc.GraphRAGServiceServicer):
             return graphrag_pb2.InsertResponse(
                 success=False,
                 error=str(e)
+            )
+    
+    def ProcessFile(self, request, context):
+        """Process file from URL and insert into knowledge graph"""
+        try:
+            logger.info(f"Received file processing request for user: {request.user_id}")
+            logger.info(f"File: {request.file_name} ({request.mime_type}) from {request.file_url}")
+            
+            # Process file using file processor with the new flow
+            process_result = file_processor.process_file_from_url(
+                file_url=request.file_url,
+                file_name=request.file_name,
+                mime_type=request.mime_type,
+                project_id=request.project_id or "default"
+            )
+            
+            if not process_result['success']:
+                logger.error(f"File processing failed: {process_result['error']}")
+                return graphrag_pb2.ProcessFileResponse(
+                    success=False,
+                    error=process_result['error'],
+                    markdown_content='',
+                    content_length=0
+                )
+            
+            markdown_content = process_result['markdown_content']
+            logger.info(f"File processed successfully. Content length: {process_result['content_length']} characters")
+            
+            # Step 4: Insert processed content into GraphRAG
+            logger.info("Step 4: Indexing content into GraphRAG...")
+            graphrag_result = graphrag_service.insert(
+                content=markdown_content,
+                user_id=request.user_id,
+                project_id=request.project_id or "default"
+            )
+            
+            # Check GraphRAG indexing result
+            if not graphrag_result['success']:
+                logger.error(f"GraphRAG indexing failed: {graphrag_result['error']}")
+                # Still return success for file processing, but note the GraphRAG error
+                return graphrag_pb2.ProcessFileResponse(
+                    success=True,
+                    error=f"File processed successfully, but GraphRAG indexing failed: {graphrag_result['error']}",
+                    markdown_content=markdown_content,
+                    content_length=process_result['content_length']
+                )
+            
+            logger.info("GraphRAG indexing completed successfully")
+            
+            # Return complete success
+            return graphrag_pb2.ProcessFileResponse(
+                success=True,
+                error="",
+                markdown_content=markdown_content,
+                content_length=process_result['content_length']
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in ProcessFile: {str(e)}")
+            return graphrag_pb2.ProcessFileResponse(
+                success=False,
+                error=str(e),
+                markdown_content='',
+                content_length=0
             )
     
     def QueryGraph(self, request, context):

@@ -2,6 +2,9 @@ import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
 import path from 'path'
 
+// gRPC status codes for better error handling
+const { status } = grpc
+
 // Define types for the gRPC service
 interface ChatMessage {
   role: string
@@ -54,6 +57,22 @@ interface InsertContentRequest {
 interface InsertContentResponse {
   success: boolean
   error: string
+}
+
+interface ProcessFileRequest {
+  file_url: string
+  user_id: string
+  project_id: string
+  file_name: string
+  mime_type: string
+  source_id: string
+}
+
+interface ProcessFileResponse {
+  success: boolean
+  error: string
+  markdown_content: string
+  content_length: number
 }
 
 interface QueryGraphRequest {
@@ -161,11 +180,69 @@ class GraphRAGClient {
   
   async insertContent(request: InsertContentRequest): Promise<InsertContentResponse> {
     return new Promise((resolve, reject) => {
+      // Set timeout for content insertion (2 minutes)
+      const timeout = setTimeout(() => {
+        reject(new Error('gRPC call timeout: Content insertion took too long'))
+      }, 2 * 60 * 1000)
+
       this.client.InsertContent(request, (error: any, response: InsertContentResponse) => {
+        clearTimeout(timeout)
+        
         if (error) {
-          reject(error)
+          // Enhanced error handling
+          let enhancedError = error
+          if (error.code === status.UNAVAILABLE) {
+            enhancedError = new Error('GraphRAG service is unavailable')
+          } else if (error.code === status.INVALID_ARGUMENT) {
+            enhancedError = new Error(`Invalid content parameters: ${error.details || error.message}`)
+          }
+          reject(enhancedError)
         } else {
           resolve(response)
+        }
+      })
+    })
+  }
+
+  async processFile(request: ProcessFileRequest): Promise<ProcessFileResponse> {
+    return new Promise((resolve, reject) => {
+      // Set timeout for file processing (5 minutes)
+      const timeout = setTimeout(() => {
+        reject(new Error('gRPC call timeout: File processing took too long'))
+      }, 5 * 60 * 1000)
+
+      this.client.ProcessFile(request, (error: any, response: ProcessFileResponse) => {
+        clearTimeout(timeout)
+        
+        if (error) {
+          // Enhanced error handling
+          let enhancedError = error
+          if (error.code === status.UNAVAILABLE) {
+            enhancedError = new Error('Processing service is unavailable - please try again later')
+          } else if (error.code === status.INVALID_ARGUMENT) {
+            enhancedError = new Error(`Invalid request parameters: ${error.details || error.message}`)
+          } else if (error.code === status.DEADLINE_EXCEEDED) {
+            enhancedError = new Error('Processing timeout - file may be too large')
+          } else {
+            enhancedError = new Error(`Processing service error: ${error.message || 'Unknown error'}`)
+          }
+          reject(enhancedError)
+        } else {
+          // Validate response structure
+          if (!response || typeof response.success !== 'boolean') {
+            reject(new Error('Invalid response from processing service'))
+            return
+          }
+          
+          // Ensure string fields are strings
+          const validatedResponse: ProcessFileResponse = {
+            success: response.success,
+            error: response.error || '',
+            markdown_content: response.markdown_content || '',
+            content_length: response.content_length || 0
+          }
+          
+          resolve(validatedResponse)
         }
       })
     })
@@ -173,16 +250,52 @@ class GraphRAGClient {
   
   async queryGraph(request: QueryGraphRequest): Promise<QueryGraphResponse> {
     return new Promise((resolve, reject) => {
+      // Set timeout for graph queries (30 seconds)
+      const timeout = setTimeout(() => {
+        reject(new Error('gRPC call timeout: Graph query took too long'))
+      }, 30 * 1000)
+
       this.client.QueryGraph(request, (error: any, response: QueryGraphResponse) => {
+        clearTimeout(timeout)
+        
         if (error) {
-          reject(error)
+          let enhancedError = error
+          if (error.code === status.UNAVAILABLE) {
+            enhancedError = new Error('GraphRAG service is unavailable')
+          } else if (error.code === status.INVALID_ARGUMENT) {
+            enhancedError = new Error(`Invalid query parameters: ${error.details || error.message}`)
+          }
+          reject(enhancedError)
         } else {
-          resolve(response)
+          // Validate response structure
+          const validatedResponse: QueryGraphResponse = {
+            response: response.response || '',
+            context: response.context || {},
+            success: response.success || false,
+            error: response.error || ''
+          }
+          resolve(validatedResponse)
         }
       })
     })
   }
   
+  async healthCheck(): Promise<boolean> {
+    try {
+      // Simple health check by attempting a small query
+      const result = await this.queryGraph({
+        query: "health check",
+        user_id: "system",
+        project_id: "health",
+        max_results: 1
+      })
+      return true
+    } catch (error) {
+      console.warn('GraphRAG service health check failed:', error)
+      return false
+    }
+  }
+
   close() {
     this.client.close()
   }
@@ -202,6 +315,8 @@ export type {
   SearchResponse,
   InsertContentRequest,
   InsertContentResponse,
+  ProcessFileRequest,
+  ProcessFileResponse,
   QueryGraphRequest,
   QueryGraphResponse
 }

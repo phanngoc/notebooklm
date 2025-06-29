@@ -232,6 +232,37 @@ export class DatabaseService {
     }
   }
 
+  async updateSource(sourceId: string, updates: { 
+    title?: string; 
+    content?: string; 
+    metadata?: any;
+    type?: string;
+    url?: string;
+  }) {
+    try {
+      const updateData: any = { 
+        ...updates,
+        updated_at: new Date().toISOString()
+      }
+
+      const { data, error } = await this.supabase
+        .from("sources")
+        .update(updateData)
+        .eq("id", sourceId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error updating source:", error)
+        throw error
+      }
+      return data
+    } catch (error) {
+      console.error("Error updating source:", error)
+      throw error
+    }
+  }
+
   async deleteSource(sourceId: string) {
     try {
       const { error } = await this.supabase.from("sources").delete().eq("id", sourceId)

@@ -6,14 +6,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { useToast } from '@/hooks/use-toast'
-import { fileUploadService, UploadResult, UploadProgress } from '@/lib/file-upload'
 import { Upload, FileText, X, Check, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface FileUploadProps {
   projectId: string
   userId: string
-  onUploadComplete?: (result: UploadResult) => void
+  onUploadComplete?: (result: any) => void
   onUploadError?: (error: string) => void
   className?: string
   maxFiles?: number
@@ -24,7 +23,7 @@ interface UploadingFile {
   file: File
   progress: number
   status: 'uploading' | 'completed' | 'error'
-  result?: UploadResult
+  result?: any
   error?: string
 }
 
@@ -71,20 +70,36 @@ export function FileUpload({
       const fileIndex = uploadingFiles.length + i
 
       try {
-        const result = await fileUploadService.uploadFile(
-          file,
-          projectId,
-          userId,
-          (progress: UploadProgress) => {
-            setUploadingFiles(prev => {
-              const updated = [...prev]
-              if (updated[fileIndex]) {
-                updated[fileIndex].progress = progress.percentage
-              }
-              return updated
-            })
+        // Create FormData for the API call
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('projectId', projectId)
+
+        // Update progress to show upload starting
+        setUploadingFiles(prev => {
+          const updated = [...prev]
+          if (updated[fileIndex]) {
+            updated[fileIndex].progress = 20
           }
-        )
+          return updated
+        })
+
+        // Make API call to upload endpoint
+        const response = await fetch('/api/sources', {
+          method: 'POST',
+          body: formData,
+        })
+
+        // Update progress during processing
+        setUploadingFiles(prev => {
+          const updated = [...prev]
+          if (updated[fileIndex]) {
+            updated[fileIndex].progress = 60
+          }
+          return updated
+        })
+
+        const result = await response.json()
 
         // Update file status
         setUploadingFiles(prev => {
@@ -101,7 +116,7 @@ export function FileUpload({
         if (result.success) {
           toast({
             title: "Upload successful",
-            description: `${file.name} has been uploaded successfully.`
+            description: `${file.name} has been uploaded and indexed successfully.`
           })
           onUploadComplete?.(result)
         } else {
@@ -113,7 +128,8 @@ export function FileUpload({
           onUploadError?.(result.error || 'Unknown error')
         }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        console.error('Upload error:', error)
+        const errorMessage = error instanceof Error ? error.message : 'Network error occurred'
         
         // Update file status with error
         setUploadingFiles(prev => {
