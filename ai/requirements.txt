@@ -12,6 +12,8 @@ google-auth-oauthlib
 google-auth-httplib2
 # Document conversion
 docling
+pandas
+beautifulsoup4
 # Database connectivity
 supabase
 # HTTP requests (for fallback API calls)

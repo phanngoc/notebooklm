@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
+
 # Load environment variables
 load_dotenv()
 
@@ -50,18 +51,6 @@ class DatabaseService:
             
         except Exception as e:
             logger.error(f"Error fetching user setting: {str(e)}")
-            return None
-    
-    def get_google_drive_credentials(self, user_id: str) -> Optional[str]:
-        """Get Google Drive credentials for a user"""
-        try:
-            setting = self.get_user_setting(user_id, 'google_drive_credentials')
-            if setting and setting['value']:
-                return setting['value']
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error fetching Google Drive credentials: {str(e)}")
             return None
     
     def save_document_to_db(self, user_id: str, project_id: str, title: str, 
@@ -111,6 +100,17 @@ class DatabaseService:
         """Close Supabase client connection"""
         # Supabase client doesn't need explicit closing like psycopg2
         logger.info("DatabaseService cleanup completed")
+    
+    def get_google_drive_credentials(self, user_id: str) -> Optional[str]:
+        """Get user's Google Drive credentials from settings"""
+        try:
+            setting = self.get_user_setting(user_id, 'google_drive_credentials')
+            if setting and setting.get('value'):
+                return setting['value']
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching Google Drive credentials: {str(e)}")
+            return None
 
 # Singleton instance
 _db_service = None

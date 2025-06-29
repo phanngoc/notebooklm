@@ -7,6 +7,9 @@ service GraphRAGService {
   // Insert content into the knowledge graph
   rpc InsertContent (InsertContentRequest) returns (InsertResponse);
   
+  // Process file from URL and insert into knowledge graph
+  rpc ProcessFile (ProcessFileRequest) returns (ProcessFileResponse);
+  
   // Query the knowledge graph for relevant information
   rpc QueryGraph (QueryRequest) returns (QueryResponse);
 }
@@ -25,6 +28,24 @@ message InsertContentRequest {
   string content = 1;
   string user_id = 2;
   string project_id = 3;
+}
+
+// Request for processing file from URL
+message ProcessFileRequest {
+  string file_url = 1;
+  string user_id = 2;
+  string project_id = 3;
+  string file_name = 4;
+  string mime_type = 5;
+  string source_id = 6;
+}
+
+// Response for file processing
+message ProcessFileResponse {
+  bool success = 1;
+  string error = 2;
+  string markdown_content = 3;
+  int32 content_length = 4;
 }
 
 // Response for content insertion

@@ -24,7 +24,7 @@ export interface UploadProgress {
 
 export class FileUploadService {
   private supabase
-  private bucketName = 'documents'
+  private bucketName = 'filedoc'
 
   constructor() {
     this.supabase = createClientComponentClient()
@@ -222,9 +222,11 @@ export class FileUploadService {
   private async ensureBucketExists(): Promise<void> {
     try {
       const { data: buckets } = await this.supabase.storage.listBuckets()
+      console.log('Available buckets:', buckets)
       const bucketExists = buckets?.some(bucket => bucket.name === this.bucketName)
 
       if (!bucketExists) {
+        console.log(`Bucket "${this.bucketName}" does not exist, creating...`)
         const { error } = await this.supabase.storage.createBucket(this.bucketName, {
           public: true,
           allowedMimeTypes: [
