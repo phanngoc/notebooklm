@@ -76,16 +76,50 @@ export function SourcesPanel({
           urlInput.includes('docs.google.com/spreadsheets')) {
         await handleGoogleDrive()
       } else {
-        onAddDocument({
-          title: titleInput || `Website: ${urlInput}`,
-          type: "website",
-          content: `Content from: ${urlInput}`,
+        // Handle regular website URLs by sending them to the backend for processing
+        await handleWebsiteUrl()
+      }
+    }
+  }
+
+  const handleWebsiteUrl = async () => {
+    try {
+      const response = await fetch('/api/sources/website', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           url: urlInput,
-        })
+          title: titleInput || `Website: ${urlInput}`,
+          projectId: projectId,
+        }),
+      })
+
+      const result = await response.json()
+      
+      if (result.success) {
+
+        const document: Document = {
+          id: result.source.id,
+          title: result.source.title || "Website Document",
+          type: "website",
+          content: result.source.content.substring(0, 200) || "",
+          url: result.source.url,
+          selected: false,
+          createdAt: new Date(),
+        }
+        addDocument(document)
+        
         setUrlInput("")
         setTitleInput("")
         setIsAddingSource(false)
+      } else {
+        alert(`Error: ${result.error}`)
       }
+    } catch (error) {
+      console.error('Error processing website URL:', error)
+      alert('Failed to process website URL')
     }
   }
 
