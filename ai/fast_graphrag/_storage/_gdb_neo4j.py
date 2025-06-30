@@ -40,6 +40,10 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
     
     config: Neo4jStorageConfig[GTNode, GTEdge] = field()
     _driver: Optional[Any] = field(init=False, default=None)
+    _node_id_map: Dict[str, int] = field(init=False, default_factory=dict)
+    _edge_id_map: Dict[str, int] = field(init=False, default_factory=dict)
+    _next_node_id: int = field(init=False, default=0)
+    _next_edge_id: int = field(init=False, default=0)
 
     def __post_init__(self):
         """Initialize Neo4j driver after dataclass creation."""
@@ -57,6 +61,34 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         except Exception as e:
             logger.error(f"Failed to connect to Neo4j: {e}", e)
             raise InvalidStorageError(f"Neo4j connection failed: {e}")
+
+    def _get_node_index(self, neo4j_id: str) -> int:
+        """Convert Neo4j element ID to internal integer index."""
+        if neo4j_id not in self._node_id_map:
+            self._node_id_map[neo4j_id] = self._next_node_id
+            self._next_node_id += 1
+        return self._node_id_map[neo4j_id]
+
+    def _get_edge_index(self, neo4j_id: str) -> int:
+        """Convert Neo4j element ID to internal integer index."""
+        if neo4j_id not in self._edge_id_map:
+            self._edge_id_map[neo4j_id] = self._next_edge_id
+            self._next_edge_id += 1
+        return self._edge_id_map[neo4j_id]
+
+    def _get_neo4j_node_id(self, index: int) -> Optional[str]:
+        """Convert internal integer index back to Neo4j element ID."""
+        for neo4j_id, idx in self._node_id_map.items():
+            if idx == index:
+                return neo4j_id
+        return None
+
+    def _get_neo4j_edge_id(self, index: int) -> Optional[str]:
+        """Convert internal integer index back to Neo4j element ID."""
+        for neo4j_id, idx in self._edge_id_map.items():
+            if idx == index:
+                return neo4j_id
+        return None
 
     async def save_graphml(self, path: str) -> None:
         """Export graph to GraphML format."""
@@ -99,7 +131,9 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             if record:
                 node_data = dict(record["n"])
                 node_obj = self.config.node_cls(**node_data)
-                return (node_obj, record["internal_id"])
+                neo4j_id = record["internal_id"]
+                integer_index = self._get_node_index(neo4j_id)
+                return (node_obj, integer_index)
             
             return (None, None)
 
@@ -124,20 +158,26 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 edge_data["target"] = record["target_name"]
                 
                 edge_obj = self.config.edge_cls(**edge_data)
-                edges.append((edge_obj, record["edge_id"]))
+                neo4j_edge_id = record["edge_id"]
+                integer_index = self._get_edge_index(neo4j_edge_id)
+                edges.append((edge_obj, integer_index))
         
         return edges
 
     async def get_node_by_index(self, index: TIndex) -> Union[GTNode, None]:
-        """Get node by Neo4j internal ID."""
+        """Get node by internal integer index."""
+        neo4j_id = self._get_neo4j_node_id(index)
+        if neo4j_id is None:
+            return None
+            
         cypher = """
         MATCH (n:Entity)
-        WHERE elementId(n) = $index
+        WHERE elementId(n) = $neo4j_id
         RETURN n
         """
         
         with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher, index=index)
+            result = session.run(cypher, neo4j_id=neo4j_id)
             record = result.single()
             
             if record:
@@ -147,15 +187,19 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             return None
 
     async def get_edge_by_index(self, index: TIndex) -> Union[GTEdge, None]:
-        """Get edge by Neo4j internal ID."""
+        """Get edge by internal integer index."""
+        neo4j_id = self._get_neo4j_edge_id(index)
+        if neo4j_id is None:
+            return None
+            
         cypher = """
         MATCH (s:Entity)-[r:RELATED]->(t:Entity)
-        WHERE elementId(r) = $index
+        WHERE elementId(r) = $neo4j_id
         RETURN r, s.name as source_name, t.name as target_name
         """
         
         with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher, index=index)
+            result = session.run(cypher, neo4j_id=neo4j_id)
             record = result.single()
             
             if record:
@@ -172,17 +216,22 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         node_data = asdict(node)
         
         if node_index is not None:
-            # Update existing node by internal ID
+            # Update existing node by internal index
+            neo4j_id = self._get_neo4j_node_id(node_index)
+            if neo4j_id is None:
+                raise InvalidStorageError(f"Node index {node_index} not found in mapping")
+                
             cypher = """
             MATCH (n:Entity)
-            WHERE elementId(n) = $index
+            WHERE elementId(n) = $neo4j_id
             SET n += $properties
             RETURN elementId(n) as internal_id
             """
             
             with self._driver.session(database=self.config.database) as session:
-                result = session.run(cypher, index=node_index, properties=node_data)
-                return result.single()["internal_id"]
+                result = session.run(cypher, neo4j_id=neo4j_id, properties=node_data)
+                neo4j_element_id = result.single()["internal_id"]
+                return self._get_node_index(neo4j_element_id)
         else:
             # Create new node or update if exists by name
             cypher = """
@@ -197,7 +246,8 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                     name=node_data.get("name"), 
                     properties=node_data
                 )
-                return result.single()["internal_id"]
+                neo4j_element_id = result.single()["internal_id"]
+                return self._get_node_index(neo4j_element_id)
 
     async def upsert_edge(self, edge: GTEdge, edge_index: Union[TIndex, None]) -> TIndex:
         """Insert or update an edge."""
@@ -206,17 +256,22 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         target = edge_data.pop("target")
         
         if edge_index is not None:
-            # Update existing edge by internal ID
+            # Update existing edge by internal index
+            neo4j_id = self._get_neo4j_edge_id(edge_index)
+            if neo4j_id is None:
+                raise InvalidStorageError(f"Edge index {edge_index} not found in mapping")
+                
             cypher = """
             MATCH ()-[r:RELATED]->()
-            WHERE elementId(r) = $index
+            WHERE elementId(r) = $neo4j_id
             SET r += $properties
             RETURN elementId(r) as edge_id
             """
             
             with self._driver.session(database=self.config.database) as session:
-                result = session.run(cypher, index=edge_index, properties=edge_data)
-                return result.single()["edge_id"]
+                result = session.run(cypher, neo4j_id=neo4j_id, properties=edge_data)
+                neo4j_element_id = result.single()["edge_id"]
+                return self._get_edge_index(neo4j_element_id)
         else:
             # Create new edge
             cypher = """
@@ -234,7 +289,8 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                     target=target, 
                     properties=edge_data
                 )
-                return result.single()["edge_id"]
+                neo4j_element_id = result.single()["edge_id"]
+                return self._get_edge_index(neo4j_element_id)
 
     async def insert_edges(
         self,
@@ -271,32 +327,43 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             
             with self._driver.session(database=self.config.database) as session:
                 result = session.run(cypher, edges=edge_params)
-                edge_ids = [record["edge_id"] for record in result]
+                for record in result:
+                    neo4j_element_id = record["edge_id"]
+                    integer_index = self._get_edge_index(neo4j_element_id)
+                    edge_ids.append(integer_index)
         
         elif indices is not None:
             # Create edges by node indices
             indices_list = list(indices)
-            cypher = """
-            UNWIND $indices as index_pair
-            MATCH (s:Entity) WHERE elementId(s) = index_pair.source
-            MATCH (t:Entity) WHERE elementId(t) = index_pair.target
-            CREATE (s)-[r:RELATED]->(t)
-            SET r += $properties
-            RETURN elementId(r) as edge_id
-            """
             
-            index_params = [
-                {"source": src, "target": tgt} 
-                for src, tgt in indices_list
-            ]
+            # Convert integer indices back to Neo4j IDs for the query
+            neo4j_pairs = []
+            for src_idx, tgt_idx in indices_list:
+                src_neo4j_id = self._get_neo4j_node_id(src_idx)
+                tgt_neo4j_id = self._get_neo4j_node_id(tgt_idx)
+                if src_neo4j_id and tgt_neo4j_id:
+                    neo4j_pairs.append({"source": src_neo4j_id, "target": tgt_neo4j_id})
             
-            with self._driver.session(database=self.config.database) as session:
-                result = session.run(
-                    cypher, 
-                    indices=index_params, 
-                    properties=attrs or {}
-                )
-                edge_ids = [record["edge_id"] for record in result]
+            if neo4j_pairs:
+                cypher = """
+                UNWIND $indices as index_pair
+                MATCH (s:Entity) WHERE elementId(s) = index_pair.source
+                MATCH (t:Entity) WHERE elementId(t) = index_pair.target
+                CREATE (s)-[r:RELATED]->(t)
+                SET r += $properties
+                RETURN elementId(r) as edge_id
+                """
+                
+                with self._driver.session(database=self.config.database) as session:
+                    result = session.run(
+                        cypher, 
+                        indices=neo4j_pairs, 
+                        properties=attrs or {}
+                    )
+                    for record in result:
+                        neo4j_element_id = record["edge_id"]
+                        integer_index = self._get_edge_index(neo4j_element_id)
+                        edge_ids.append(integer_index)
         
         return edge_ids
 
@@ -312,17 +379,26 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             return result.single()["connected"]
 
     async def delete_edges_by_index(self, indices: Iterable[TIndex]) -> None:
-        """Delete edges by their internal IDs."""
+        """Delete edges by their internal integer indices."""
         indices_list = list(indices)
-        cypher = """
-        UNWIND $indices as edge_id
-        MATCH ()-[r:RELATED]->()
-        WHERE elementId(r) = edge_id
-        DELETE r
-        """
         
-        with self._driver.session(database=self.config.database) as session:
-            session.run(cypher, indices=indices_list)
+        # Convert integer indices to Neo4j element IDs
+        neo4j_ids = []
+        for idx in indices_list:
+            neo4j_id = self._get_neo4j_edge_id(idx)
+            if neo4j_id:
+                neo4j_ids.append(neo4j_id)
+        
+        if neo4j_ids:
+            cypher = """
+            UNWIND $neo4j_ids as edge_id
+            MATCH ()-[r:RELATED]->()
+            WHERE elementId(r) = edge_id
+            DELETE r
+            """
+            
+            with self._driver.session(database=self.config.database) as session:
+                session.run(cypher, neo4j_ids=neo4j_ids)
 
     async def score_nodes(self, initial_weights: Optional[csr_matrix]) -> csr_matrix:
         """Calculate PageRank scores for nodes."""
@@ -331,8 +407,11 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         CALL gds.graph.project(
             'graphrag_graph',
             'Entity',
-            'RELATED',
-            {undirectedRelationshipTypes: ['RELATED']}
+            {
+                RELATED: {
+                    orientation: 'UNDIRECTED'
+                }
+            }
         )
         """
         
@@ -385,10 +464,25 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher)
-            degrees = [record["degree"] for record in result]
             
-            if not degrees:
+            # Create a list to store degrees by integer index
+            max_index = -1
+            degree_map = {}
+            
+            for record in result:
+                node_neo4j_id = record["node_id"]
+                degree = record["degree"]
+                node_idx = self._get_node_index(node_neo4j_id)
+                degree_map[node_idx] = degree
+                max_index = max(max_index, node_idx)
+            
+            if max_index == -1:
                 return csr_matrix((1, 0))
+            
+            # Create ordered list of degrees
+            degrees = []
+            for i in range(max_index + 1):
+                degrees.append(degree_map.get(i, 0))
             
             # Normalize degrees
             max_degree = max(degrees) if degrees else 1
@@ -404,7 +498,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         WITH n, elementId(n) as node_id
         ORDER BY node_id
         OPTIONAL MATCH (n)-[r:RELATED]-()
-        WITH node_id, collect(DISTINCT elementId(r)) as edge_ids
+        WITH elementId(n) as node_id, collect(DISTINCT elementId(r)) as edge_ids
         RETURN node_id, edge_ids
         """
         
@@ -413,8 +507,18 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             
             node_edges = []
             for record in result:
-                edge_ids = record["edge_ids"] or []
-                node_edges.append(edge_ids)
+                node_neo4j_id = record["node_id"]
+                edge_neo4j_ids = record["edge_ids"] or []
+                
+                # Convert Neo4j IDs to integer indices
+                node_idx = self._get_node_index(node_neo4j_id)
+                edge_indices = [self._get_edge_index(edge_id) for edge_id in edge_neo4j_ids if edge_id]
+                
+                # Ensure we have enough entries in the list
+                while len(node_edges) <= node_idx:
+                    node_edges.append([])
+                
+                node_edges[node_idx] = edge_indices
             
             if not node_edges:
                 return csr_matrix((0, 0))
@@ -431,20 +535,33 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         """Get relationship attributes by key."""
         cypher = f"""
         MATCH ()-[r:RELATED]->()
-        RETURN r.{key} as attr_value
+        RETURN r.{key} as attr_value, elementId(r) as edge_id
         ORDER BY elementId(r)
         """
         
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher)
             
-            attrs = []
+            # Create a map from integer index to attribute values
+            max_index = -1
+            attr_map = {}
+            
             for record in result:
+                edge_neo4j_id = record["edge_id"]
                 attr_value = record["attr_value"]
+                edge_idx = self._get_edge_index(edge_neo4j_id)
+                
                 if isinstance(attr_value, list):
-                    attrs.append(attr_value)
+                    attr_map[edge_idx] = attr_value
                 else:
-                    attrs.append([attr_value] if attr_value is not None else [])
+                    attr_map[edge_idx] = [attr_value] if attr_value is not None else []
+                
+                max_index = max(max_index, edge_idx)
+            
+            # Create ordered list of attributes
+            attrs = []
+            for i in range(max_index + 1):
+                attrs.append(attr_map.get(i, []))
             
             return attrs
 
@@ -461,6 +578,25 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                     session.run(constraint)
                 except Exception as e:
                     logger.debug(f"Constraint/index already exists or failed: {e}")
+        
+        # Initialize ID mappings for existing nodes and edges
+        await self._initialize_id_mappings()
+
+    async def _initialize_id_mappings(self):
+        """Initialize ID mappings for existing nodes and edges in the database."""
+        # Initialize node mappings
+        cypher_nodes = "MATCH (n:Entity) RETURN elementId(n) as node_id ORDER BY node_id"
+        with self._driver.session(database=self.config.database) as session:
+            result = session.run(cypher_nodes)
+            for record in result:
+                self._get_node_index(record["node_id"])
+        
+        # Initialize edge mappings
+        cypher_edges = "MATCH ()-[r:RELATED]->() RETURN elementId(r) as edge_id ORDER BY edge_id"
+        with self._driver.session(database=self.config.database) as session:
+            result = session.run(cypher_edges)
+            for record in result:
+                self._get_edge_index(record["edge_id"])
 
     async def _insert_done(self):
         """Finalize insert operations."""
