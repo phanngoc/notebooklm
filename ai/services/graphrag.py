@@ -7,6 +7,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from fast_graphrag import GraphRAG
+from fast_graphrag._storage._gdb_neo4j import Neo4jStorage, Neo4jStorageConfig
+from fast_graphrag._types import TEntity, TRelation, TId
 from .database import DatabaseService
 
 # Setup logging
@@ -31,7 +33,7 @@ class GraphRAGService:
         
         # Initialize database service
         self.db_service = DatabaseService()
-        
+
         # Default domain and configuration for financial/business documents
         self.default_domain = """Analyze documents to identify key information that affects business value, growth potential, and strategic insights. 
         Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships."""
@@ -55,7 +57,7 @@ class GraphRAGService:
         # Store GraphRAG instances per user/collection
         self.graphrag_instances: Dict[str, GraphRAG] = {}
         
-        logger.info("GraphRAG service initialized successfully")
+
     
     def _get_graph_key(self, user_id: str, project_id: str = "default") -> str:
         """Generate a unique key for user's graph"""
@@ -101,14 +103,32 @@ class GraphRAGService:
             user_working_dir = os.path.join(self.working_dir, graph_key)
             os.makedirs(user_working_dir, exist_ok=True)
             
-            # Create new GraphRAG instance with project-specific config
+           # Create Neo4j storage configuration
+            neo4j_storage_config = Neo4jStorageConfig(
+                node_cls=TEntity,
+                edge_cls=TRelation,
+                uri="bolt://localhost:7687",
+                username="neo4j",
+                password="password123",
+                database=f"notebookllm",
+                ppr_damping=0.85
+            )
+            
+            neo4j_storage = Neo4jStorage(config=neo4j_storage_config)
+            
+            # Create GraphRAG with custom Neo4j storage
+            graphrag_config = GraphRAG.Config()
+            graphrag_config.graph_storage = neo4j_storage
+            
             self.graphrag_instances[graph_key] = GraphRAG(
                 working_dir=user_working_dir,
                 domain=config['domain'],
                 example_queries="\n".join(config['example_queries']),
-                entity_types=config['entity_types']
+                entity_types=config['entity_types'],
+                config=graphrag_config
             )
-            logger.info(f"Created new GraphRAG instance for {graph_key} with project-specific config")
+            
+            logger.info(f"Created new GraphRAG instance for {graph_key} with Neo4j storage")
         
         return self.graphrag_instances[graph_key]
 
@@ -213,11 +233,52 @@ class GraphRAGService:
         if project_id:
             graph_key = self._get_graph_key(user_id, project_id)
             if graph_key in self.graphrag_instances:
+                # Close Neo4j connection if using Neo4j storage
+                if self.use_neo4j:
+                    try:
+                        graphrag_instance = self.graphrag_instances[graph_key]
+                        if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
+                            graphrag_instance.config.graph_storage.close()
+                    except Exception as e:
+                        logger.warning(f"Error closing Neo4j connection for {graph_key}: {e}")
+                
                 del self.graphrag_instances[graph_key]
                 logger.info(f"Cleared GraphRAG cache for {graph_key}")
         else:
             # Clear all instances for the user
             keys_to_remove = [key for key in self.graphrag_instances.keys() if key.startswith(f"{user_id}_")]
             for key in keys_to_remove:
+                # Close Neo4j connections if using Neo4j storage
+                if self.use_neo4j:
+                    try:
+                        graphrag_instance = self.graphrag_instances[key]
+                        if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
+                            graphrag_instance.config.graph_storage.close()
+                    except Exception as e:
+                        logger.warning(f"Error closing Neo4j connection for {key}: {e}")
+                
                 del self.graphrag_instances[key]
             logger.info(f"Cleared all GraphRAG cache for user {user_id}")
+
+    def close_all_connections(self):
+        """Close all Neo4j connections - call this when shutting down the service"""
+        if self.use_neo4j:
+            for graph_key, graphrag_instance in self.graphrag_instances.items():
+                try:
+                    if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
+                        graphrag_instance.config.graph_storage.close()
+                        logger.info(f"Closed Neo4j connection for {graph_key}")
+                except Exception as e:
+                    logger.error(f"Error closing Neo4j connection for {graph_key}: {e}")
+            
+            self.graphrag_instances.clear()
+            logger.info("All Neo4j connections closed")
+
+    def get_storage_info(self) -> Dict[str, Any]:
+        """Get information about current storage configuration"""
+        return {
+            "storage_type": "Neo4j" if self.use_neo4j else "IGraph",
+            "neo4j_config": self.neo4j_config if self.use_neo4j else None,
+            "active_instances": len(self.graphrag_instances),
+            "instance_keys": list(self.graphrag_instances.keys())
+        }
