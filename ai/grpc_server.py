@@ -21,7 +21,6 @@ from dotenv import load_dotenv
 from services.graphrag import GraphRAGService
 from services.google_drive import GoogleDriveProcessor
 from services.file_processor import file_processor
-from services.database import get_db_service
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

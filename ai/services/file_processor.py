@@ -9,7 +9,7 @@ import tempfile
 import mimetypes
 from supabase import create_client, Client
 from docling.document_converter import DocumentConverter
-
+from urllib.parse import urlparse
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +31,7 @@ class FileProcessor:
             'application/vnd.openxmlformats-officedocument.presentationml.presentation': self._convert_to_markdown,
             'text/plain': self._convert_to_markdown,
             'text/markdown': self._convert_to_markdown,
-            'text/html': self._convert_to_markdown,
+            'text/html': self._convert_to_markdown,  # This will handle website content
             'application/json': self._convert_to_markdown,
             'text/csv': self._convert_to_markdown,
             'application/rtf': self._convert_to_markdown
@@ -173,15 +173,15 @@ class FileProcessor:
 
     def process_file_from_url(self, file_url: str, file_name: str, mime_type: str, project_id: str) -> Dict[str, Any]:
         """
-        Process file from Supabase URL through the complete pipeline:
-        1. Download from Supabase storage
+        Process file from Supabase URL or website URL through the complete pipeline:
+        1. Download from Supabase storage or website
         2. Save to local uploads directory
         3. Convert to markdown
         4. Return processed data
         
         Args:
-            file_url: URL to the file in Supabase storage
-            file_name: Original filename
+            file_url: URL to the file in Supabase storage or website URL
+            file_name: Original filename or website title
             mime_type: MIME type of the file
             project_id: Project ID for organizing files
             
@@ -192,7 +192,13 @@ class FileProcessor:
             logger.info(f"Processing file from URL: {file_url}")
             logger.info(f"File: {file_name}, MIME type: {mime_type}, Project: {project_id}")
             
-            # Check if file type is supported
+            # Check if it's a website URL (not a Supabase storage URL)
+            if file_url.startswith(('http://', 'https://')) and 'supabase' not in file_url and '/storage/v1/object/public/' not in file_url:
+                # This is a website URL
+                logger.info("Detected website URL, using website processing...")
+                return self.process_website_from_url(file_url, file_name, project_id)
+            
+            # Check if file type is supported for regular file processing
             if mime_type not in self.supported_types:
                 return {
                     'success': False,
@@ -251,6 +257,65 @@ class FileProcessor:
             
         except Exception as e:
             logger.error(f"Error processing file from URL: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'markdown_content': '',
+                'content_length': 0,
+                'file_path': ''
+            }
+
+    def process_website_from_url(self, url: str, file_name: str, project_id: str) -> Dict[str, Any]:
+        """
+        Process website from URL through the complete pipeline:
+        1. Download website content
+        2. Save to local uploads directory
+        3. Convert to markdown using docling
+        4. Return processed data
+        
+        Args:
+            url: Website URL to process
+            file_name: Display name for the website
+            project_id: Project ID for organizing files
+            
+        Returns:
+            Dictionary with processing results
+        """
+        try:
+            logger.info(f"Processing website from URL: {url}")
+            logger.info(f"Name: {file_name}, Project: {project_id}")
+            
+            # Step 1: Download website content
+            logger.info("Step 1: Downloading website content...")
+            
+            # Step 3: Convert to markdown using docling
+            logger.info("Step 3: Converting website content to markdown...")
+            converter = DocumentConverter()
+            result = converter.convert(source=url)
+            markdown_content = result.document.export_to_markdown()
+            print(f"Markdown content length: {len(markdown_content)} characters", markdown_content)
+            
+            if not markdown_content:
+                return {
+                    'success': False,
+                    'error': 'Failed to convert website content to markdown',
+                    'markdown_content': '',
+                    'content_length': 0,
+                    'file_path': url
+                }
+            
+            # Return success result
+            logger.info(f"Website processing completed successfully. Content length: {len(markdown_content)} characters")
+            return {
+                'success': True,
+                'error': '',
+                'markdown_content': markdown_content,
+                'content_length': len(markdown_content),
+                'file_path': url
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing website from URL: {str(e)}")
             return {
                 'success': False,
                 'error': str(e),
