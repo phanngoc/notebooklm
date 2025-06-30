@@ -177,11 +177,13 @@ class GraphRAGService:
 
             graph = self._get_or_create_graphrag(user_id, project_id)
             result = graph.query(query)
+            # print("Graph query result:", result)
+            response_text = result.response.answer
+            chunks = result.context.chunks
+            print("Graph query chunks:", chunks, type(result))
 
             return {
-                'response': result.response if hasattr(result, 'response') else str(result),
-                'entities': [],  # fast-graphrag doesn't expose entities directly
-                'relationships': [],  # fast-graphrag doesn't expose relationships directly
+                'response': response_text,
                 'context': {},
                 'success': True,
                 'error': ""
