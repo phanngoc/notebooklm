@@ -264,34 +264,6 @@ class FileProcessor:
                 'content_length': 0,
                 'file_path': ''
             }
-    
-    def _download_from_website(self, url: str) -> bytes:
-        """
-        Download content from a website URL
-        
-        Args:
-            url: Website URL to download content from
-            
-        Returns:
-            Website content as bytes
-        """
-        try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            response = requests.get(url, headers=headers, timeout=30)
-            response.raise_for_status()  # Raise an exception for bad status codes
-            
-            logger.info(f"Downloaded website content from: {url} (size: {len(response.content)} bytes)")
-            return response.content
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error downloading website content from {url}: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error downloading website: {e}")
-            raise
 
     def process_website_from_url(self, url: str, file_name: str, project_id: str) -> Dict[str, Any]:
         """
