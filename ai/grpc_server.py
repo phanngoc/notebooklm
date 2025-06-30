@@ -309,8 +309,6 @@ class GraphRAGServicer(graphrag_pb2_grpc.GraphRAGServiceServicer):
             logger.error(f"Error in QueryGraph: {str(e)}")
             return graphrag_pb2.QueryResponse(
                 response="",
-                entities=[],
-                relationships=[],
                 context=graphrag_pb2.GraphContext(),
                 success=False,
                 error=str(e)

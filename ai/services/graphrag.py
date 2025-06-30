@@ -5,12 +5,16 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+
 from fast_graphrag import GraphRAG
 from .database import DatabaseService
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Log the GraphRAG module location for debugging
+logger.info(f"GraphRAG module loaded from: {GraphRAG.__module__}")
 
 class GraphRAGService:
     """
