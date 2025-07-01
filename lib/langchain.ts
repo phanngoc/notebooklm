@@ -18,68 +18,31 @@ export class VectorService {
     })
   }
 
-  async addDocuments(sourceId: string, content: string, metadata: Record<string, any> = {}) {
+  async indexDocument(sourceId: string, content: string, metadata: Record<string, any> = {}) {
     try {
-      const supabaseClient = createServerClient()
+      const userId = metadata.userId || metadata.user_id || 'unknown'
+      const projectId = metadata.projectId || metadata.project_id || 'default'
+      
+      console.log("Inserting content into GraphRAG service...", {
+        contentLength: content.length,
+        userId,
+        projectId
+      })
 
-      // Split the document into chunks
-      const chunks = this.textSplitter.splitText(content)
+      const graphragResponse = await graphragClient.insertContent({
+        content: content,
+        user_id: userId,
+        project_id: projectId
+      })
 
-      // Generate embeddings for each chunk
-      const embeddings_results = await embeddings.embedDocuments(chunks)
-
-      // Prepare data for insertion
-      const documentsToInsert = chunks.map((chunk, index) => ({
-        source_id: sourceId,
-        content: chunk,
-        embedding: embeddings_results[index],
-        metadata: {
-          sourceId,
-          chunkIndex: index,
-          ...metadata,
-        },
-      }))
-
-      // Insert into Supabase in batches to avoid timeout
-      const batchSize = 10
-      for (let i = 0; i < documentsToInsert.length; i += batchSize) {
-        const batch = documentsToInsert.slice(i, i + batchSize)
-        const { error } = await supabaseClient.from("document_embeddings").insert(batch)
-
-        if (error) throw error
-      }
-
-      console.log('addDocuments:metadata:', metadata)
-
-      // Insert content into GraphRAG service
-      try {
-        const userId = metadata.userId || metadata.user_id || 'unknown'
-        const projectId = metadata.projectId || metadata.project_id || 'default'
-        
-        console.log("Inserting content into GraphRAG service...", {
-          contentLength: content.length,
-          userId,
-          projectId
-        })
-
-        const graphragResponse = await graphragClient.insertContent({
-          content: content,
-          user_id: userId,
-          project_id: projectId
-        })
-
-        if (!graphragResponse.success) {
-          console.warn("GraphRAG insertion failed:", graphragResponse.error)
-          // Continue execution even if GraphRAG fails to maintain backward compatibility
-        } else {
-          console.log("Content successfully inserted into GraphRAG service")
-        }
-      } catch (graphragError) {
-        console.warn("GraphRAG service unavailable or failed:", graphragError)
+      if (!graphragResponse.success) {
+        console.warn("GraphRAG insertion failed:", graphragResponse.error)
         // Continue execution even if GraphRAG fails to maintain backward compatibility
+        return { success: false, error: graphragResponse.error }
+      } else {
+        console.log("Content successfully inserted into GraphRAG service")
+        return { success: true }
       }
-
-      return { success: true, chunksCount: chunks.length }
     } catch (error) {
       console.error("Error adding documents to vector store:", error)
       throw error
@@ -157,27 +120,6 @@ export class VectorService {
     } catch (error) {
       console.warn("GraphRAG service unavailable or failed:", error)
       return null
-    }
-  }
-
-  async hybridSearch(query: string, sourceIds: string[] = [], userId?: string, projectId?: string, k = 5) {
-    try {
-      // Perform both vector similarity search and GraphRAG query in parallel
-      const [vectorResults, graphragResults] = await Promise.allSettled([
-        this.similaritySearch(query, sourceIds, k),
-        userId && projectId ? this.queryGraphRAG(query, userId, projectId) : Promise.resolve(null)
-      ])
-
-      const results: any = {
-        vectorResults: vectorResults.status === 'fulfilled' ? vectorResults.value : [],
-        graphragResults: graphragResults.status === 'fulfilled' ? graphragResults.value : null,
-        success: true
-      }
-
-      return results
-    } catch (error) {
-      console.error("Error performing hybrid search:", error)
-      throw error
     }
   }
 }

@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     console.log("Project updated:", projectUpdated)
 
     // Process document for vector search
-    const result = await vectorService.addDocuments(source.id, content, {
+    const result = await vectorService.indexDocument(source.id, content, {
       title: source.title,
       type: source.type,
       url: source.url,
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       sourceId: source.id,
-      chunksProcessed: result.chunksCount,
+      chunksProcessed: 0,
       projectUpdated: projectUpdated,
     })
   } catch (error) {

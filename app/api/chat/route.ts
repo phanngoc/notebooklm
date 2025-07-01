@@ -42,34 +42,6 @@ export async function POST(request: NextRequest) {
 
     let context = ""
     let relevantSources: string[] = []
-
-    // try {
-    //   // Try to perform similarity search to get relevant context
-    //   const relevantDocs = await vectorService.similaritySearch(message, sourceIds, 5)
-    //   console.log("Relevant documents found:", relevantDocs.length)
-      
-    //   if (relevantDocs.length > 0) {
-    //     context = relevantDocs
-    //       .map((doc: any) => `Source: ${doc.metadata.title || doc.sourceId}\nContent: ${doc.content}`)
-    //       .join("\n\n---\n\n")
-    //     relevantSources = relevantDocs.map((doc: any) => doc.sourceId)
-    //   } else {
-    //     try {
-    //       const sources = await dbService.getSources(user.id)
-    //       const selectedSources = sources.filter((source) => sourceIds.includes(source.id))
-
-    //       context = selectedSources
-    //         .map((source) => `Source: ${source.title}\nContent: ${source.content.substring(0, 2000)}...`)
-    //         .join("\n\n---\n\n")
-    //       relevantSources = selectedSources.map((source) => source.id)
-    //     } catch (fallbackError) {
-    //       console.error("Fallback context retrieval failed:", fallbackError)
-    //     }
-    //   }
-    // } catch (vectorError) {
-    //   console.error("Vector search failed, falling back to basic context:", vectorError)
-    // }
-
     let aiResponse: string = ""
     let graphragResponse: string = ""
     let messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = []
