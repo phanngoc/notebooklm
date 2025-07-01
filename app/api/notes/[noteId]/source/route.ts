@@ -51,7 +51,7 @@ export async function POST(
     )
 
     // Process document for vector search
-    const result = await vectorService.addDocuments(source.id, note.content, {
+    const result = await vectorService.indexDocument(source.id, note.content, {
       title: source.title,
       type: source.type,
       url: source.url,
@@ -62,7 +62,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       sourceId: source.id,
-      chunksProcessed: result.chunksCount,
+      chunksProcessed: 0,
     })
   } catch (error) {
     console.error("Error converting note to source:", error)
