@@ -1,0 +1,1 @@
+tạo file README.md giải thích thuật toán trong code , dùng math và mermaid code để biểu diễn một cách rõ ràng , tập trụng vào sự hình dung

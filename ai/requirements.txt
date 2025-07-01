@@ -6,6 +6,8 @@ python-dotenv
 qdrant-client
 # GraphRAG dependencies
 fast-graphrag
+# Redis for caching
+redis
 # Google Drive API
 google-api-python-client
 google-auth-oauthlib

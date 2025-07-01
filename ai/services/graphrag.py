@@ -8,7 +8,8 @@ from datetime import datetime
 
 from fast_graphrag import GraphRAG
 from fast_graphrag._storage._gdb_neo4j import Neo4jStorage, Neo4jStorageConfig
-from fast_graphrag._types import TEntity, TRelation, TId
+from fast_graphrag._storage._ikv_redis import RedisIndexedKeyValueStorage
+from fast_graphrag._types import TEntity, TRelation, TId, THash, TChunk
 from .database import DatabaseService
 
 # Setup logging
@@ -33,6 +34,16 @@ class GraphRAGService:
         
         # Initialize database service
         self.db_service = DatabaseService()
+
+        # Redis configuration
+        self.use_redis = os.getenv('USE_REDIS', 'true').lower() == 'true'
+        self.redis_config = {
+            'host': os.getenv('REDIS_HOST', 'localhost'),
+            'port': int(os.getenv('REDIS_PORT', '6379')),
+            'db': int(os.getenv('REDIS_DB', '0')),
+            'password': os.getenv('REDIS_PASSWORD'),
+            'prefix': 'graphrag_chunks'
+        }
 
         # Default domain and configuration for financial/business documents
         self.default_domain = """Analyze documents to identify key information that affects business value, growth potential, and strategic insights. 
@@ -103,7 +114,10 @@ class GraphRAGService:
             user_working_dir = os.path.join(self.working_dir, graph_key)
             os.makedirs(user_working_dir, exist_ok=True)
             
-           # Create Neo4j storage configuration
+            # Create GraphRAG configuration
+            graphrag_config = GraphRAG.Config()
+            
+            # Setup Neo4j storage for graph
             neo4j_storage_config = Neo4jStorageConfig(
                 node_cls=TEntity,
                 edge_cls=TRelation,
@@ -113,13 +127,21 @@ class GraphRAGService:
                 database=f"notebookllm",
                 ppr_damping=0.85
             )
-            
             neo4j_storage = Neo4jStorage(config=neo4j_storage_config)
-            
-            # Create GraphRAG with custom Neo4j storage
-            graphrag_config = GraphRAG.Config()
             graphrag_config.graph_storage = neo4j_storage
-            
+
+            # Conditionally setup Redis storage for chunks
+            redis_storage = RedisIndexedKeyValueStorage[THash, TChunk](
+                config=None,
+                redis_host=self.redis_config['host'],
+                redis_port=self.redis_config['port'],
+                redis_db=self.redis_config['db'],
+                redis_password=self.redis_config['password'],
+                redis_prefix=f"{self.redis_config['prefix']}_{graph_key}"
+            )
+
+            graphrag_config.chunk_storage = redis_storage
+
             self.graphrag_instances[graph_key] = GraphRAG(
                 working_dir=user_working_dir,
                 domain=config['domain'],
@@ -127,8 +149,7 @@ class GraphRAGService:
                 entity_types=config['entity_types'],
                 config=graphrag_config
             )
-            
-            logger.info(f"Created new GraphRAG instance for {graph_key} with Neo4j storage")
+
         
         return self.graphrag_instances[graph_key]
 
@@ -233,52 +254,100 @@ class GraphRAGService:
         if project_id:
             graph_key = self._get_graph_key(user_id, project_id)
             if graph_key in self.graphrag_instances:
-                # Close Neo4j connection if using Neo4j storage
-                if self.use_neo4j:
-                    try:
-                        graphrag_instance = self.graphrag_instances[graph_key]
-                        if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
-                            graphrag_instance.config.graph_storage.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing Neo4j connection for {graph_key}: {e}")
+                graphrag_instance = self.graphrag_instances[graph_key]
                 
-                del self.graphrag_instances[graph_key]
-                logger.info(f"Cleared GraphRAG cache for {graph_key}")
+                # Close Neo4j connection
+                try:
+                    if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
+                        graphrag_instance.config.graph_storage.close()
+                except Exception as e:
+                    logger.warning(f"Error closing Neo4j connection for {graph_key}: {e}")
+                
+                # Close Redis connection if using Redis storage
+                try:
+                    if (hasattr(graphrag_instance.config, 'chunk_storage') and 
+                        hasattr(graphrag_instance.config.chunk_storage, 'close')):
+                        graphrag_instance.config.chunk_storage.close()
+                except Exception as e:
+                    logger.warning(f"Error closing Redis connection for {graph_key}: {e}")
+                finally:
+                   del self.graphrag_instances[graph_key]
+                   logger.info(f"Cleared GraphRAG cache for {graph_key}")
         else:
             # Clear all instances for the user
             keys_to_remove = [key for key in self.graphrag_instances.keys() if key.startswith(f"{user_id}_")]
             for key in keys_to_remove:
-                # Close Neo4j connections if using Neo4j storage
-                if self.use_neo4j:
+                graphrag_instance = self.graphrag_instances[key]
+                
+                # Close Neo4j connections
+                try:
+                    if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
+                        graphrag_instance.config.graph_storage.close()
+                except Exception as e:
+                    logger.warning(f"Error closing Neo4j connection for {key}: {e}")
+                
+                # Close Redis connections if using Redis storage
+                if self.use_redis:
                     try:
-                        graphrag_instance = self.graphrag_instances[key]
-                        if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
-                            graphrag_instance.config.graph_storage.close()
+                        if (hasattr(graphrag_instance.config, 'chunk_storage') and 
+                            hasattr(graphrag_instance.config.chunk_storage, 'close')):
+                            graphrag_instance.config.chunk_storage.close()
                     except Exception as e:
-                        logger.warning(f"Error closing Neo4j connection for {key}: {e}")
+                        logger.warning(f"Error closing Redis connection for {key}: {e}")
                 
                 del self.graphrag_instances[key]
             logger.info(f"Cleared all GraphRAG cache for user {user_id}")
 
     def close_all_connections(self):
-        """Close all Neo4j connections - call this when shutting down the service"""
-        if self.use_neo4j:
-            for graph_key, graphrag_instance in self.graphrag_instances.items():
-                try:
-                    if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
-                        graphrag_instance.config.graph_storage.close()
-                        logger.info(f"Closed Neo4j connection for {graph_key}")
-                except Exception as e:
-                    logger.error(f"Error closing Neo4j connection for {graph_key}: {e}")
-            
-            self.graphrag_instances.clear()
-            logger.info("All Neo4j connections closed")
+        """Close all connections (Neo4j and Redis) - call this when shutting down the service"""
+        for graph_key, graphrag_instance in self.graphrag_instances.items():
+            try:
+                # Close Neo4j connection
+                if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
+                    graphrag_instance.config.graph_storage.close()
+                    logger.info(f"Closed Neo4j connection for {graph_key}")
+                
+                # Close Redis connection
+                if (self.use_redis and 
+                    hasattr(graphrag_instance.config, 'chunk_storage') and 
+                    hasattr(graphrag_instance.config.chunk_storage, 'close')):
+                    graphrag_instance.config.chunk_storage.close()
+                    logger.info(f"Closed Redis connection for {graph_key}")
+                    
+            except Exception as e:
+                logger.error(f"Error closing connections for {graph_key}: {e}")
+        
+        self.graphrag_instances.clear()
+        logger.info("All connections closed")
 
     def get_storage_info(self) -> Dict[str, Any]:
         """Get information about current storage configuration"""
         return {
-            "storage_type": "Neo4j" if self.use_neo4j else "IGraph",
-            "neo4j_config": self.neo4j_config if self.use_neo4j else None,
+            "graph_storage": "Neo4j",
+            "chunk_storage": "Redis" if self.use_redis else "Default (Pickle)",
+            "redis_config": self.redis_config if self.use_redis else None,
             "active_instances": len(self.graphrag_instances),
             "instance_keys": list(self.graphrag_instances.keys())
         }
+
+    def clear_redis_data(self, user_id: str, project_id: str = "default") -> Dict[str, Any]:
+        """Clear Redis data for a specific user/project"""
+        if not self.use_redis:
+            return {"error": "Redis storage not enabled", "success": False}
+        
+        try:
+            graph_key = self._get_graph_key(user_id, project_id)
+            if graph_key in self.graphrag_instances:
+                graphrag_instance = self.graphrag_instances[graph_key]
+                chunk_storage = graphrag_instance.config.chunk_storage
+                
+                if hasattr(chunk_storage, 'clear_namespace'):
+                    chunk_storage.clear_namespace()
+                    return {"success": True, "message": f"Cleared Redis data for {graph_key}"}
+                else:
+                    return {"error": "Storage doesn't support namespace clearing", "success": False}
+            else:
+                return {"error": "GraphRAG instance not found", "success": False}
+        except Exception as e:
+            logger.error(f"Error clearing Redis data: {e}")
+            return {"error": str(e), "success": False}
