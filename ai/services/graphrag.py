@@ -35,6 +35,8 @@ class GraphRAGService:
         # Initialize database service
         self.db_service = DatabaseService()
 
+        # Redis configuration
+        self.use_redis = os.getenv('USE_REDIS', 'true').lower() == 'true'
         self.redis_config = {
             'host': os.getenv('REDIS_HOST', 'localhost'),
             'port': int(os.getenv('REDIS_PORT', '6379')),
@@ -128,6 +130,7 @@ class GraphRAGService:
             neo4j_storage = Neo4jStorage(config=neo4j_storage_config)
             graphrag_config.graph_storage = neo4j_storage
 
+            # Conditionally setup Redis storage for chunks
             redis_storage = RedisIndexedKeyValueStorage[THash, TChunk](
                 config=None,
                 redis_host=self.redis_config['host'],
@@ -136,10 +139,9 @@ class GraphRAGService:
                 redis_password=self.redis_config['password'],
                 redis_prefix=f"{self.redis_config['prefix']}_{graph_key}"
             )
-            graphrag_config.chunk_storage = redis_storage
-            logger.info(f"Using Redis for chunk storage: {self.redis_config['host']}:{self.redis_config['port']}")
 
-            
+            graphrag_config.chunk_storage = redis_storage
+
             self.graphrag_instances[graph_key] = GraphRAG(
                 working_dir=user_working_dir,
                 domain=config['domain'],
@@ -262,16 +264,15 @@ class GraphRAGService:
                     logger.warning(f"Error closing Neo4j connection for {graph_key}: {e}")
                 
                 # Close Redis connection if using Redis storage
-                if self.use_redis:
-                    try:
-                        if (hasattr(graphrag_instance.config, 'chunk_storage') and 
-                            hasattr(graphrag_instance.config.chunk_storage, 'close')):
-                            graphrag_instance.config.chunk_storage.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing Redis connection for {graph_key}: {e}")
-                
-                del self.graphrag_instances[graph_key]
-                logger.info(f"Cleared GraphRAG cache for {graph_key}")
+                try:
+                    if (hasattr(graphrag_instance.config, 'chunk_storage') and 
+                        hasattr(graphrag_instance.config.chunk_storage, 'close')):
+                        graphrag_instance.config.chunk_storage.close()
+                except Exception as e:
+                    logger.warning(f"Error closing Redis connection for {graph_key}: {e}")
+                finally:
+                   del self.graphrag_instances[graph_key]
+                   logger.info(f"Cleared GraphRAG cache for {graph_key}")
         else:
             # Clear all instances for the user
             keys_to_remove = [key for key in self.graphrag_instances.keys() if key.startswith(f"{user_id}_")]
@@ -328,27 +329,6 @@ class GraphRAGService:
             "active_instances": len(self.graphrag_instances),
             "instance_keys": list(self.graphrag_instances.keys())
         }
-
-    def get_redis_stats(self, user_id: str, project_id: str = "default") -> Dict[str, Any]:
-        """Get Redis storage statistics for a specific user/project"""
-        if not self.use_redis:
-            return {"error": "Redis storage not enabled"}
-        
-        try:
-            graph_key = self._get_graph_key(user_id, project_id)
-            if graph_key in self.graphrag_instances:
-                graphrag_instance = self.graphrag_instances[graph_key]
-                chunk_storage = graphrag_instance.config.chunk_storage
-                
-                if hasattr(chunk_storage, 'get_stats'):
-                    return chunk_storage.get_stats()
-                else:
-                    return {"error": "Storage doesn't support stats"}
-            else:
-                return {"error": "GraphRAG instance not found"}
-        except Exception as e:
-            logger.error(f"Error getting Redis stats: {e}")
-            return {"error": str(e)}
 
     def clear_redis_data(self, user_id: str, project_id: str = "default") -> Dict[str, Any]:
         """Clear Redis data for a specific user/project"""

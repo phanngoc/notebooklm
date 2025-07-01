@@ -64,17 +64,17 @@ class RedisIndexedKeyValueStorage(BaseIndexedKeyValueStorage[GTKey, GTValue]):
 
     def _get_data_key(self, index: TIndex) -> str:
         """Generate Redis key for data storage"""
-        namespace_key = self.namespace.name if self.namespace else "default"
+        namespace_key = self.namespace.namespace if self.namespace else "default"
         return f"{self.redis_prefix}:data:{namespace_key}:{index}"
 
     def _get_metadata_key(self) -> str:
         """Generate Redis key for metadata storage"""
-        namespace_key = self.namespace.name if self.namespace else "default"
+        namespace_key = self.namespace.namespace if self.namespace else "default"
         return f"{self.redis_prefix}:meta:{namespace_key}"
 
     def _get_key_index_key(self) -> str:
         """Generate Redis key for key-to-index mapping"""
-        namespace_key = self.namespace.name if self.namespace else "default"
+        namespace_key = self.namespace.namespace if self.namespace else "default"
         return f"{self.redis_prefix}:key_index:{namespace_key}"
 
     def _serialize_value(self, value: GTValue) -> bytes:
@@ -384,7 +384,7 @@ class RedisIndexedKeyValueStorage(BaseIndexedKeyValueStorage[GTKey, GTValue]):
     def clear_namespace(self):
         """Clear all data for the current namespace"""
         try:
-            namespace_key = self.namespace.name if self.namespace else "default"
+            namespace_key = self.namespace.namespace if self.namespace else "default"
             pattern = f"{self.redis_prefix}:*:{namespace_key}*"
             
             # Find all keys matching the pattern
@@ -408,7 +408,7 @@ class RedisIndexedKeyValueStorage(BaseIndexedKeyValueStorage[GTKey, GTValue]):
     def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics"""
         try:
-            namespace_key = self.namespace.name if self.namespace else "default"
+            namespace_key = self.namespace.namespace if self.namespace else "default"
             pattern = f"{self.redis_prefix}:*:{namespace_key}*"
             
             keys = self._redis_client.keys(pattern)
