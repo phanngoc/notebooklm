@@ -141,7 +141,7 @@ class BaseGraphRAG(Generic[GTEmbedding, GTHash, GTChunk, GTNode, GTEdge, GTId]):
             # Return the total number of entities, relationships, and chunks
             return r
         except Exception as e:
-            logger.error(f"Error during insertion: {e}")
+            logger.error(f"Error during insertion:", e)
             raise e
 
     def query(self, query: str, params: Optional[QueryParam] = None, response_model = None) -> TQueryResponse[GTNode, GTEdge, GTHash, GTChunk]:

@@ -123,13 +123,15 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         MATCH (n:Entity {name: $node_id})
         RETURN n, elementId(n) as internal_id
         """
-        
+        print("Fetching node by ID:", node_id)
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher, node_id=node_id)
             record = result.single()
             
             if record:
                 node_data = dict(record["n"])
+                # Deserialize nested collections
+                node_data = self._deserialize_nested_collections(node_data)
                 node_obj = self.config.node_cls(**node_data)
                 neo4j_id = record["internal_id"]
                 integer_index = self._get_node_index(neo4j_id)
@@ -157,6 +159,9 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 edge_data["source"] = record["source_name"]
                 edge_data["target"] = record["target_name"]
                 
+                # Deserialize nested collections
+                edge_data = self._deserialize_nested_collections(edge_data)
+                
                 edge_obj = self.config.edge_cls(**edge_data)
                 neo4j_edge_id = record["edge_id"]
                 integer_index = self._get_edge_index(neo4j_edge_id)
@@ -169,7 +174,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         neo4j_id = self._get_neo4j_node_id(index)
         if neo4j_id is None:
             return None
-            
+        print("Fetching node by index:", index, "Neo4j ID:", neo4j_id)
         cypher = """
         MATCH (n:Entity)
         WHERE elementId(n) = $neo4j_id
@@ -182,6 +187,8 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             
             if record:
                 node_data = dict(record["n"])
+                # Deserialize nested collections
+                node_data = self._deserialize_nested_collections(node_data)
                 return self.config.node_cls(**node_data)
             
             return None
@@ -207,6 +214,9 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 edge_data["source"] = record["source_name"]
                 edge_data["target"] = record["target_name"]
                 
+                # Deserialize nested collections
+                edge_data = self._deserialize_nested_collections(edge_data)
+                
                 return self.config.edge_cls(**edge_data)
             
             return None
@@ -215,6 +225,10 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         """Insert or update a node."""
         node_data = asdict(node)
         
+        # Serialize nested collections
+        node_data = self._serialize_nested_collections(node_data)
+        
+        print("Upserting node:", node_data, "Index:", node_index)
         if node_index is not None:
             # Update existing node by internal index
             neo4j_id = self._get_neo4j_node_id(node_index)
@@ -255,6 +269,9 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         source = edge_data.pop("source")
         target = edge_data.pop("target")
         
+        # Serialize nested collections
+        edge_data = self._serialize_nested_collections(edge_data)
+        
         if edge_index is not None:
             # Update existing edge by internal index
             neo4j_id = self._get_neo4j_edge_id(edge_index)
@@ -292,6 +309,40 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 neo4j_element_id = result.single()["edge_id"]
                 return self._get_edge_index(neo4j_element_id)
 
+    def _serialize_nested_collections(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Serialize nested collections to JSON strings for Neo4j storage."""
+        serialized = {}
+        for key, value in data.items():
+            if isinstance(value, (list, tuple)):
+                # Check if it's a nested collection
+                if value and isinstance(value[0], (list, tuple, dict)):
+                    serialized[key] = json.dumps(value)
+                else:
+                    serialized[key] = value
+            elif isinstance(value, dict):
+                serialized[key] = json.dumps(value)
+            else:
+                serialized[key] = value
+        return serialized
+
+    def _deserialize_nested_collections(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Deserialize JSON strings back to nested collections."""
+        deserialized = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                try:
+                    # Try to parse as JSON
+                    parsed = json.loads(value)
+                    if isinstance(parsed, (list, dict)):
+                        deserialized[key] = parsed
+                    else:
+                        deserialized[key] = value
+                except (json.JSONDecodeError, TypeError):
+                    deserialized[key] = value
+            else:
+                deserialized[key] = value
+        return deserialized
+
     async def insert_edges(
         self,
         edges: Optional[Iterable[GTEdge]] = None,
@@ -300,7 +351,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
     ) -> List[TIndex]:
         """Batch insert edges for better performance."""
         edge_ids: List[TIndex] = []
-        
+        print("Starting batch edge insertion...", edges, indices, attrs)
         if edges is not None:
             edges_list = list(edges)
             
@@ -319,6 +370,8 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 edge_dict = asdict(edge)
                 source = edge_dict.pop("source")
                 target = edge_dict.pop("target")
+                # Serialize nested collections
+                edge_dict = self._serialize_nested_collections(edge_dict)
                 edge_params.append({
                     "source": source,
                     "target": target,
@@ -344,7 +397,10 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 if src_neo4j_id and tgt_neo4j_id:
                     neo4j_pairs.append({"source": src_neo4j_id, "target": tgt_neo4j_id})
             
-            if neo4j_pairs:
+            if neo4j_pairs and attrs:
+                # Serialize nested collections in attrs
+                serialized_attrs = self._serialize_nested_collections(dict(attrs))
+                
                 cypher = """
                 UNWIND $indices as index_pair
                 MATCH (s:Entity) WHERE elementId(s) = index_pair.source
@@ -358,8 +414,24 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                     result = session.run(
                         cypher, 
                         indices=neo4j_pairs, 
-                        properties=attrs or {}
+                        properties=serialized_attrs
                     )
+                    for record in result:
+                        neo4j_element_id = record["edge_id"]
+                        integer_index = self._get_edge_index(neo4j_element_id)
+                        edge_ids.append(integer_index)
+            elif neo4j_pairs:
+                # No attributes to set, just create edges
+                cypher = """
+                UNWIND $indices as index_pair
+                MATCH (s:Entity) WHERE elementId(s) = index_pair.source
+                MATCH (t:Entity) WHERE elementId(t) = index_pair.target
+                CREATE (s)-[r:RELATED]->(t)
+                RETURN elementId(r) as edge_id
+                """
+                
+                with self._driver.session(database=self.config.database) as session:
+                    result = session.run(cypher, indices=neo4j_pairs)
                     for record in result:
                         neo4j_element_id = record["edge_id"]
                         integer_index = self._get_edge_index(neo4j_element_id)
@@ -426,7 +498,8 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         """
         
         cypher_drop_graph = """
-        CALL gds.graph.drop('graphrag_graph')
+        CALL gds.graph.drop('graphrag_graph') YIELD graphName
+        RETURN graphName
         """
         
         try:
@@ -551,7 +624,17 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 attr_value = record["attr_value"]
                 edge_idx = self._get_edge_index(edge_neo4j_id)
                 
-                if isinstance(attr_value, list):
+                # Handle deserialization of JSON strings
+                if isinstance(attr_value, str):
+                    try:
+                        parsed = json.loads(attr_value)
+                        if isinstance(parsed, list):
+                            attr_map[edge_idx] = parsed
+                        else:
+                            attr_map[edge_idx] = [parsed] if parsed is not None else []
+                    except (json.JSONDecodeError, TypeError):
+                        attr_map[edge_idx] = [attr_value] if attr_value is not None else []
+                elif isinstance(attr_value, list):
                     attr_map[edge_idx] = attr_value
                 else:
                     attr_map[edge_idx] = [attr_value] if attr_value is not None else []

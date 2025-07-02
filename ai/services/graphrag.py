@@ -218,7 +218,7 @@ class GraphRAGService:
 
             graph = self._get_or_create_graphrag(user_id, project_id)
             result = graph.query(query)
-            # print("Graph query result:", result)
+            print("Graph query result:", result.context.entities, result.context.relations)
             response_text = result.response.answer
             chunks = result.context.chunks
             print("Graph query chunks:", chunks, type(result))
