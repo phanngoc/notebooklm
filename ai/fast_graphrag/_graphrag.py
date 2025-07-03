@@ -151,7 +151,7 @@ class BaseGraphRAG(Generic[GTEmbedding, GTHash, GTChunk, GTNode, GTEdge, GTId]):
                 answer = await self.async_query(query, params, response_model)
                 return answer
             except Exception as e:
-                logger.error(f"Error during query: {e}")
+                logger.error(f"Error during query: {e}", e)
                 raise e
             finally:
                 await self.state_manager.query_done()

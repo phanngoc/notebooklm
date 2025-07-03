@@ -77,7 +77,15 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         
         try:
             collection_info = self._client.get_collection(self._collection_name)
-            return collection_info.points_count or 0
+            current_size = collection_info.points_count or 0
+            self._size_cache = current_size
+            return current_size
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                # Collection doesn't exist yet
+                return 0
+            logger.warning(f"Failed to get collection size: {e}")
+            return self._size_cache
         except Exception as e:
             logger.warning(f"Failed to get collection size: {e}")
             return self._size_cache
@@ -257,7 +265,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
 
         # Ensure collection exists with dimension validation
         if embeddings_list:
-            self._ensure_collection_exists(sample_embedding=embeddings_list[0])
+            await self.ensure_dimension_compatibility(embeddings_list[0])
         else:
             self._ensure_collection_exists()
         
@@ -296,6 +304,9 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
             
         except Exception as e:
             logger.error(f"Error upserting vectors to Qdrant: {e}")
+            # Log debugging information
+            debug_info = await self.validate_collection_consistency()
+            logger.error(f"Collection debug info: {debug_info}")
             raise InvalidStorageError(f"Failed to upsert vectors: {e}") from e
 
     async def get_knn(
@@ -379,13 +390,39 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         client = self._get_client()
         top_k = min(top_k, self.size)
         
+        # Get actual collection size to ensure matrix dimensions are correct
+        actual_size = self.size
+        
+        # Build point ID to index mapping
+        # First, get all point IDs to create a consistent mapping
+        try:
+            # Get all points to create ID mapping
+            all_points = client.scroll(
+                collection_name=self._collection_name,
+                limit=actual_size,
+                with_payload=False,
+                with_vectors=False
+            )[0]  # Returns (points, next_page_offset)
+            
+            # Create mapping from point ID to sequential index
+            id_to_index = {}
+            for idx, point in enumerate(all_points):
+                id_to_index[point.id] = idx
+                
+            # Update actual size based on retrieved points
+            actual_size = len(all_points)
+            
+        except Exception as e:
+            logger.warning(f"Failed to build ID mapping, falling back to direct indexing: {e}")
+            id_to_index = {}
+        
         # Collect all search results
         all_row_indices = []
         all_col_indices = []
         all_scores = []
         
         try:
-            logger.debug(f"Scoring {len(embeddings_list)} embeddings against collection '{self._collection_name}'")
+            logger.debug(f"Scoring {len(embeddings_list)} embeddings against collection '{self._collection_name}' (size: {actual_size})")
             for query_idx, embedding in enumerate(embeddings_list):
                 search_result = client.search(
                     collection_name=self._collection_name,
@@ -403,17 +440,29 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
                     if threshold is not None and score < threshold:
                         continue
                     
-                    # We need to map point IDs to column indices
-                    # This is a simplified approach - in practice, you might need a more sophisticated mapping
+                    # Map point ID to column index
                     point_id = scored_point.id
-                    if isinstance(point_id, str) and point_id.isdigit():
-                        col_idx = int(point_id)
-                    elif isinstance(point_id, int):
-                        col_idx = point_id
+                    
+                    if id_to_index:
+                        # Use the pre-built mapping
+                        col_idx = id_to_index.get(point_id)
+                        if col_idx is None:
+                            logger.warning(f"Point ID {point_id} not found in mapping, skipping")
+                            continue
                     else:
-                        # For non-numeric IDs, we'd need a proper mapping strategy
-                        # For now, use hash modulo size as a fallback
-                        col_idx = hash(str(point_id)) % self.size
+                        # Fallback to direct mapping with bounds checking
+                        if isinstance(point_id, str) and point_id.isdigit():
+                            col_idx = int(point_id)
+                        elif isinstance(point_id, int):
+                            col_idx = point_id
+                        else:
+                            # For non-numeric IDs, use hash modulo size
+                            col_idx = hash(str(point_id)) % actual_size
+                    
+                    # Ensure column index is within bounds
+                    if col_idx >= actual_size:
+                        logger.warning(f"Column index {col_idx} exceeds matrix size {actual_size}, using modulo")
+                        col_idx = col_idx % actual_size
                     
                     all_row_indices.append(query_idx)
                     all_col_indices.append(col_idx)
@@ -423,14 +472,14 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
             logger.error(f"Error scoring all embeddings: {e}")
             raise InvalidStorageError(f"Failed to score embeddings: {e}") from e
 
-        # Create sparse matrix
+        # Create sparse matrix with correct dimensions
         if all_scores:
             scores_matrix = csr_matrix(
                 (all_scores, (all_row_indices, all_col_indices)),
-                shape=(len(embeddings_list), self.size),
+                shape=(len(embeddings_list), actual_size),
             )
         else:
-            scores_matrix = csr_matrix((len(embeddings_list), self.size))
+            scores_matrix = csr_matrix((len(embeddings_list), actual_size))
 
         return scores_matrix
 
@@ -617,3 +666,78 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         logger.warning(f"Recreating collection '{self._collection_name}' with dimension {target_dimension}")
         await self.recreate_collection_with_size(target_dimension)
         logger.info(f"Collection recreated successfully with dimension {target_dimension}")
+
+    async def validate_collection_consistency(self) -> Dict[str, Any]:
+        """Validate collection consistency and return debug information."""
+        info = {
+            "collection_exists": False,
+            "collection_size": 0,
+            "expected_dimension": self.embedding_dim,
+            "actual_dimension": None,
+            "config_dimension": self.config.vector_size,
+            "collection_name": self._collection_name,
+            "errors": []
+        }
+        
+        if not self._client:
+            info["errors"].append("No client connection")
+            return info
+        
+        try:
+            collection_info = self._client.get_collection(self._collection_name)
+            info["collection_exists"] = True
+            info["collection_size"] = collection_info.points_count or 0
+            info["actual_dimension"] = collection_info.config.params.vectors.size
+            
+            # Check dimension consistency
+            if self.embedding_dim > 0 and info["actual_dimension"] != self.embedding_dim:
+                info["errors"].append(
+                    f"Dimension mismatch: expected {self.embedding_dim}, collection has {info['actual_dimension']}"
+                )
+            
+            if self.config.vector_size and info["actual_dimension"] != self.config.vector_size:
+                info["errors"].append(
+                    f"Config dimension mismatch: config {self.config.vector_size}, collection has {info['actual_dimension']}"
+                )
+                
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                info["errors"].append("Collection does not exist")
+            else:
+                info["errors"].append(f"Qdrant error: {e}")
+        except Exception as e:
+            info["errors"].append(f"Unexpected error: {e}")
+        
+        return info
+
+    async def ensure_dimension_compatibility(self, sample_embedding: GTEmbedding) -> bool:
+        """Ensure the collection is compatible with the given embedding dimension."""
+        embedding_dim = len(np.array(sample_embedding, dtype=np.float32))
+        
+        try:
+            collection_info = self._client.get_collection(self._collection_name)
+            collection_dim = collection_info.config.params.vectors.size
+            
+            if collection_dim != embedding_dim:
+                logger.warning(
+                    f"Dimension mismatch detected: collection={collection_dim}, embedding={embedding_dim}. "
+                    f"Recreating collection '{self._collection_name}'"
+                )
+                
+                # Delete and recreate collection
+                self._client.delete_collection(self._collection_name)
+                self._size_cache = 0
+                
+                # Create new collection with correct dimension
+                self._ensure_collection_exists(sample_embedding=sample_embedding)
+                return True
+                
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                # Collection doesn't exist, create it
+                self._ensure_collection_exists(sample_embedding=sample_embedding)
+                return True
+            else:
+                raise
+        
+        return True

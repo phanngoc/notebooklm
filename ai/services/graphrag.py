@@ -244,10 +244,14 @@ class GraphRAGService:
 
             graph = self._get_or_create_graphrag(user_id, project_id)
             result = graph.query(query)
-            print("Graph query result:", result.context.entities, result.context.relations)
-            response_text = result.response.answer
+            print("Graph query result:", result.context.entities, result.context.relations, type(result.response))
+            if isinstance(result.response, str):
+                response_text = result.response
+            else:
+                response_text = result.response.answer
+
             chunks = result.context.chunks
-            print("Graph query chunks:", chunks, type(result))
+            print("Graph query chunks:", chunks, type(result), response_text)
 
             return {
                 'response': response_text,
