@@ -411,7 +411,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
                 
             # Update actual size based on retrieved points
             actual_size = len(all_points)
-            
+            print(f"Collection '{self._collection_name}' has {actual_size} points.")
         except Exception as e:
             logger.warning(f"Failed to build ID mapping, falling back to direct indexing: {e}")
             id_to_index = {}
@@ -435,7 +435,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
                 
                 for scored_point in search_result:
                     score = float(scored_point.score)
-                    
+                    print(f"Scored point ID {scored_point.id} with score {score} for query index {query_idx}")
                     # Apply threshold if specified
                     if threshold is not None and score < threshold:
                         continue
@@ -481,6 +481,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         else:
             scores_matrix = csr_matrix((len(embeddings_list), actual_size))
 
+        print(f"Scored {len(all_scores)} embeddings, resulting in matrix shape {scores_matrix.shape}")
         return scores_matrix
 
     async def _insert_start(self):

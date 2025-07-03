@@ -192,6 +192,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             query_embeddings = await self.embedding_service.encode(
                 [f"{n}" for n in entities["named"]] + [f"[NONE] {n}" for n in entities["generic"]] + [query]
             )
+            print(f"Query embeddings: {query_embeddings}", entities, query)
             entity_scores: List[csr_matrix] = []
             # Similarity-search over entities
             if len(entities["named"]) > 0:
@@ -202,6 +203,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
                 )
                 entity_scores.append(vdb_entity_scores_by_named_entity)
 
+            print(f"get_context: entity_scores:", entity_scores)
             vdb_entity_scores_by_generic_entity_and_query = await self._score_entities_by_vectordb(
                 query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.5
             )
@@ -220,6 +222,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             graph_entity_scores = self.entity_ranking_policy(
                 await self._score_entities_by_graph(entity_scores=vdb_entity_scores)
             )
+            print(f"get_context:Graph entity scores:", graph_entity_scores)
         except Exception as e:
             logger.error(f"Error during graph scoring for entities. Non-zero elements: {vdb_entity_scores.nnz}.\n{e}")
             raise e
@@ -227,9 +230,11 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         try:
             # All score vectors should be row vectors
             indices, scores = extract_sorted_scores(graph_entity_scores)
+            print(f"get_context:Indices and scores:", indices, scores)
             relevant_entities: List[Tuple[TEntity, TScore]] = []
             for i, s in zip(indices, scores):
                 entity = await self.graph_storage.get_node_by_index(i)
+                print(f"get_context:Entity at index {i} with score {s}:", entity)
                 if entity is not None:
                     relevant_entities.append((entity, s))
 
@@ -237,7 +242,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             relation_scores = self.relation_ranking_policy(
                 await self._score_relationships_by_entities(entity_scores=graph_entity_scores)
             )
-
+            print(f"get_context:Relation scores:", relation_scores)
             indices, scores = extract_sorted_scores(relation_scores)
             relevant_relationships: List[Tuple[TRelation, TScore]] = []
             for i, s in zip(indices, scores):
@@ -249,6 +254,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             chunk_scores = self.chunk_ranking_policy(
                 await self._score_chunks_by_relations(relationships_score=relation_scores)
             )
+            print(f"get_context:Chunk scores:", chunk_scores)
             indices, scores = extract_sorted_scores(chunk_scores)
             relevant_chunks: List[Tuple[TChunk, TScore]] = []
             for chunk, s in zip(await self.chunk_storage.get_by_index(indices), scores):

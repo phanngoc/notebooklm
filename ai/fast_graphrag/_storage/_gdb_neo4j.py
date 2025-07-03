@@ -510,7 +510,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 # Calculate PageRank
                 result = session.run(cypher_pagerank, damping=self.config.ppr_damping)
                 scores = [record["score"] for record in result]
-                
+                print(f"PageRank scores calculated: {len(scores)} nodes", scores)
                 # Clean up
                 session.run(cypher_drop_graph)
                 
@@ -688,7 +688,8 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
 
     async def _query_start(self):
         """Prepare for query operations."""
-        pass
+        # Load node and edge ID mappings from database
+        await self._initialize_id_mappings()
 
     async def _query_done(self):
         """Cleanup after queries."""
