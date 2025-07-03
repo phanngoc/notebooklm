@@ -44,6 +44,8 @@ class QdrantVectorStorageConfig:
     
     # Search settings
     search_params: Optional[qdrant_models.SearchParams] = field(default=None)
+    # Note: exact_search is kept for backward compatibility but should be configured
+    # through search_params using qdrant_models.SearchParams(exact=True) if needed
     exact_search: bool = field(default=False)
 
 
@@ -55,13 +57,17 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
     _client: Optional[QdrantClient] = field(init=False, default=None)
     _collection_name: str = field(init=False, default="")
     _size_cache: int = field(init=False, default=0)
-
+    
     def __post_init__(self):
-        """Initialize the collection name with namespace if provided."""
+        """Initialize the collection name with namespace and set embedding dimension."""
         if self.namespace and self.namespace.namespace:
             self._collection_name = f"{self.config.collection_name}_{self.namespace.namespace}"
         else:
             self._collection_name = self.config.collection_name
+            
+        # Set embedding dimension from config if not already set
+        if self.embedding_dim == 0 and self.config.vector_size:
+            self.embedding_dim = self.config.vector_size
 
     @property
     def size(self) -> int:
@@ -90,13 +96,12 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
                 grpc_port=self.config.grpc_port,
                 prefer_grpc=self.config.prefer_grpc,
                 https=self.config.https,
-                api_key=self.config.api_key,
                 prefix=self.config.prefix,
                 timeout=self.config.timeout,
             )
         return self._client
 
-    def _ensure_collection_exists(self) -> None:
+    def _ensure_collection_exists(self, sample_embedding: Optional[GTEmbedding] = None) -> None:
         """Ensure the collection exists with proper configuration."""
         client = self._get_client()
         
@@ -104,7 +109,34 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
             # Check if collection exists
             collection_info = client.get_collection(self._collection_name)
             logger.debug(f"Collection '{self._collection_name}' already exists with {collection_info.points_count} points")
-            return
+            
+            # Validate embedding dimensions if sample provided
+            if sample_embedding is not None:
+                expected_size = collection_info.config.params.vectors.size
+                actual_size = len(np.array(sample_embedding, dtype=np.float32))
+                if expected_size != actual_size:
+                    logger.warning(
+                        f"Embedding dimension mismatch detected: collection expects {expected_size}, "
+                        f"but got {actual_size}. Auto-recreating collection with correct dimensions."
+                    )
+                    # Auto-recreate collection with correct dimensions
+                    try:
+                        client.delete_collection(self._collection_name)
+                        logger.info(f"Deleted incompatible collection '{self._collection_name}'")
+                        self._size_cache = 0
+                        # Fall through to create new collection
+                    except Exception as delete_error:
+                        logger.error(f"Failed to delete incompatible collection: {delete_error}")
+                        raise InvalidStorageError(
+                            f"Embedding dimension mismatch: collection expects {expected_size}, "
+                            f"but got {actual_size}. Manual collection recreation required."
+                        )
+                else:
+                    # Dimensions match, collection is ready
+                    return
+            else:
+                # No sample to validate, assume collection is compatible
+                return
         except UnexpectedResponse as e:
             if e.status_code == 404:
                 # Collection doesn't exist, create it
@@ -112,10 +144,26 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
             else:
                 raise
 
-        # Determine vector size
+        # Determine vector size with better error handling
         vector_size = self.config.vector_size or self.embedding_dim
+        
+        # If sample embedding provided, use its size
+        if sample_embedding is not None:
+            sample_size = len(np.array(sample_embedding, dtype=np.float32))
+            if vector_size <= 0:
+                vector_size = sample_size
+                logger.info(f"Auto-detected vector size from sample embedding: {vector_size}")
+            elif vector_size != sample_size:
+                logger.warning(f"Vector size mismatch: config={vector_size}, sample={sample_size}. Using sample size.")
+                vector_size = sample_size
+        
+        # If still no vector size, use a default for OpenAI embeddings
         if vector_size <= 0:
-            raise InvalidStorageError("Vector size must be specified either in config or embedding_dim")
+            logger.warning("No vector size specified in config or embedding_dim, defaulting to 1536 (OpenAI ada-002)")
+            vector_size = 1536
+            
+        # Update the embedding_dim for consistency
+        self.embedding_dim = vector_size
 
         # Create collection
         vectors_config = qdrant_models.VectorParams(
@@ -152,6 +200,39 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         # you might need to implement proper conversion logic here.
         return qdrant_id  # type: ignore
 
+    def _validate_embedding_dimensions(self, embeddings: Iterable[GTEmbedding]) -> List[GTEmbedding]:
+        """Validate and normalize embedding dimensions."""
+        embeddings_list = [np.array(emb, dtype=np.float32) for emb in embeddings]
+        
+        if not embeddings_list:
+            return embeddings_list
+        
+        # Check consistency within the batch
+        first_dim = len(embeddings_list[0])
+        for i, emb in enumerate(embeddings_list):
+            if len(emb) != first_dim:
+                raise ValueError(
+                    f"Embedding dimension inconsistency in batch: "
+                    f"embedding {i} has dimension {len(emb)}, expected {first_dim}"
+                )
+        
+        # Check against collection if it exists
+        if self._client:
+            try:
+                collection_info = self._client.get_collection(self._collection_name)
+                expected_dim = collection_info.config.params.vectors.size
+                if first_dim != expected_dim:
+                    raise ValueError(
+                        f"Embedding dimension mismatch with collection: "
+                        f"embeddings have dimension {first_dim}, collection expects {expected_dim}. "
+                        f"Consider recreating the collection or using compatible embeddings."
+                    )
+            except UnexpectedResponse as e:
+                if e.status_code != 404:  # Collection exists but other error
+                    logger.warning(f"Failed to validate against existing collection: {e}")
+        
+        return embeddings_list
+
     async def upsert(
         self,
         ids: Iterable[GTId],
@@ -160,7 +241,8 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
     ) -> None:
         """Insert or update vectors in Qdrant."""
         ids_list = list(ids)
-        embeddings_list = [np.array(emb, dtype=np.float32).tolist() for emb in embeddings]
+        # Validate embeddings first
+        embeddings_list = self._validate_embedding_dimensions(embeddings)
         metadata_list = list(metadata) if metadata else None
 
         # Validate input lengths
@@ -173,11 +255,15 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         if not ids_list:
             return  # Nothing to upsert
 
-        # Ensure collection exists
-        self._ensure_collection_exists()
+        # Ensure collection exists with dimension validation
+        if embeddings_list:
+            self._ensure_collection_exists(sample_embedding=embeddings_list[0])
+        else:
+            self._ensure_collection_exists()
         
         client = self._get_client()
         
+        logger.debug(f"Upserting {len(ids_list)} vectors to collection '{self._collection_name}'")
         # Prepare points for upsert
         points = []
         for i, (gt_id, embedding) in enumerate(zip(ids_list, embeddings_list)):
@@ -193,7 +279,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
             
             point = qdrant_models.PointStruct(
                 id=qdrant_id,
-                vector=embedding,
+                vector=embedding.tolist(),
                 payload=payload,
             )
             points.append(point)
@@ -216,7 +302,8 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         self, embeddings: Iterable[GTEmbedding], top_k: int
     ) -> Tuple[Iterable[Iterable[GTId]], npt.NDArray[TScore]]:
         """Get k-nearest neighbors for given embeddings."""
-        embeddings_list = [np.array(emb, dtype=np.float32).tolist() for emb in embeddings]
+        # Validate embeddings first
+        embeddings_list = self._validate_embedding_dimensions(embeddings)
         
         if not embeddings_list:
             return [], np.array([], dtype=TScore)
@@ -237,12 +324,11 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
             for embedding in embeddings_list:
                 search_result = client.search(
                     collection_name=self._collection_name,
-                    query_vector=embedding,
+                    query_vector=embedding.tolist(),
                     limit=top_k,
                     search_params=self.config.search_params,
                     with_payload=True,
                     with_vectors=False,
-                    exact=self.config.exact_search,
                 )
                 
                 # Extract IDs and scores
@@ -283,7 +369,8 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         self, embeddings: Iterable[GTEmbedding], top_k: int = 1, threshold: Optional[float] = None
     ) -> csr_matrix:
         """Score all embeddings against the given queries."""
-        embeddings_list = [np.array(emb, dtype=np.float32) for emb in embeddings]
+        # Validate embeddings first
+        embeddings_list = self._validate_embedding_dimensions(embeddings)
         
         if not embeddings_list or self.size == 0:
             logger.warning(f"No provided embeddings ({len(embeddings_list)}) or empty collection ({self.size}).")
@@ -298,6 +385,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         all_scores = []
         
         try:
+            logger.debug(f"Scoring {len(embeddings_list)} embeddings against collection '{self._collection_name}'")
             for query_idx, embedding in enumerate(embeddings_list):
                 search_result = client.search(
                     collection_name=self._collection_name,
@@ -306,7 +394,6 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
                     search_params=self.config.search_params,
                     with_payload=True,
                     with_vectors=False,
-                    exact=self.config.exact_search,
                 )
                 
                 for scored_point in search_result:
@@ -427,3 +514,106 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
         except Exception as e:
             logger.error(f"Error getting collection info: {e}")
             return {"error": str(e)}
+
+    async def get_collection_vector_size(self) -> Optional[int]:
+        """Get the vector size of the existing collection."""
+        if not self._client:
+            return None
+        
+        try:
+            client = self._get_client()
+            collection_info = client.get_collection(self._collection_name)
+            return collection_info.config.params.vectors.size
+        except Exception as e:
+            logger.warning(f"Failed to get collection vector size: {e}")
+            return None
+
+    async def validate_embedding_compatibility(self, embedding: GTEmbedding) -> bool:
+        """Check if an embedding is compatible with the existing collection."""
+        collection_size = await self.get_collection_vector_size()
+        if collection_size is None:
+            return True  # No collection exists yet
+        
+        embedding_size = len(np.array(embedding, dtype=np.float32))
+        compatible = collection_size == embedding_size
+        
+        if not compatible:
+            logger.warning(
+                f"Embedding dimension mismatch: collection expects {collection_size}, "
+                f"got {embedding_size}"
+            )
+        
+        return compatible
+
+    async def recreate_collection_with_size(self, vector_size: int) -> None:
+        """Recreate the collection with a specific vector size. WARNING: This deletes all data!"""
+        if self._client:
+            try:
+                client = self._get_client()
+                # Delete existing collection
+                try:
+                    client.delete_collection(self._collection_name)
+                    logger.info(f"Deleted existing collection '{self._collection_name}'")
+                except UnexpectedResponse as e:
+                    if e.status_code != 404:  # Ignore if collection doesn't exist
+                        raise
+
+                # Update config and recreate
+                self.config.vector_size = vector_size
+                self.embedding_dim = vector_size
+                self._size_cache = 0
+                
+                # Create new collection
+                vectors_config = qdrant_models.VectorParams(
+                    size=vector_size,
+                    distance=self.config.distance,
+                    hnsw_config=self.config.hnsw_config,
+                )
+
+                client.create_collection(
+                    collection_name=self._collection_name,
+                    vectors_config=vectors_config,
+                    optimizers_config=self.config.optimizers_config,
+                    wal_config=self.config.wal_config,
+                    quantization_config=self.config.quantization_config,
+                )
+                
+                logger.info(f"Recreated collection '{self._collection_name}' with vector size {vector_size}")
+                
+            except Exception as e:
+                logger.error(f"Error recreating collection: {e}")
+                raise InvalidStorageError(f"Failed to recreate collection: {e}") from e
+
+    async def debug_embedding_info(self) -> Dict[str, Any]:
+        """Get debug information about embedding dimensions."""
+        info = {
+            "config_vector_size": self.config.vector_size,
+            "instance_embedding_dim": self.embedding_dim,
+            "collection_exists": False,
+            "collection_vector_size": None,
+            "collection_points_count": 0,
+        }
+        
+        if self._client:
+            try:
+                collection_info = self._client.get_collection(self._collection_name)
+                info.update({
+                    "collection_exists": True,
+                    "collection_vector_size": collection_info.config.params.vectors.size,
+                    "collection_points_count": collection_info.points_count or 0,
+                })
+            except UnexpectedResponse as e:
+                if e.status_code == 404:
+                    info["collection_exists"] = False
+                else:
+                    info["collection_error"] = str(e)
+            except Exception as e:
+                info["collection_error"] = str(e)
+        
+        return info
+
+    async def fix_dimension_mismatch(self, target_dimension: int) -> None:
+        """Fix dimension mismatch by recreating collection with target dimension."""
+        logger.warning(f"Recreating collection '{self._collection_name}' with dimension {target_dimension}")
+        await self.recreate_collection_with_size(target_dimension)
+        logger.info(f"Collection recreated successfully with dimension {target_dimension}")
