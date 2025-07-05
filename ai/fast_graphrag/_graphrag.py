@@ -151,7 +151,7 @@ class BaseGraphRAG(Generic[GTEmbedding, GTHash, GTChunk, GTNode, GTEdge, GTId]):
                 answer = await self.async_query(query, params, response_model)
                 return answer
             except Exception as e:
-                logger.error(f"Error during query: {e}")
+                logger.error(f"Error during query: {e}", e)
                 raise e
             finally:
                 await self.state_manager.query_done()
@@ -181,6 +181,7 @@ class BaseGraphRAG(Generic[GTEmbedding, GTHash, GTChunk, GTNode, GTEdge, GTId]):
         extracted_entities = await self.information_extraction_service.extract_entities_from_query(
             llm=self.llm_service, query=query, prompt_kwargs={}
         )
+        print(f"Extracted entities from query '{query}': ", extracted_entities)
 
         # Retrieve relevant state
         context = await self.state_manager.get_context(query=query, entities=extracted_entities)
@@ -188,6 +189,8 @@ class BaseGraphRAG(Generic[GTEmbedding, GTHash, GTChunk, GTNode, GTEdge, GTId]):
             return TQueryResponse[GTNode, GTEdge, GTHash, GTChunk](
                 response=PROMPTS["fail_response"], context=TContext([], [], [])
             )
+        
+        print(f"Context retrieved for query '{query}': ", context)
 
         # Ask LLM
         context_str = context.truncate(
@@ -202,6 +205,7 @@ class BaseGraphRAG(Generic[GTEmbedding, GTHash, GTChunk, GTNode, GTEdge, GTId]):
             answer = ""
         else:
             response_model = TAnswer if response_model is None else response_model
+            print(f"Context for query '{query}': ", context_str)
             llm_response, _ = await format_and_send_prompt(
                 prompt_key="generate_response_query_with_references"
                 if params.with_references
