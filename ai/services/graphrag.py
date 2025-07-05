@@ -244,7 +244,11 @@ class GraphRAGService:
 
             graph = self._get_or_create_graphrag(user_id, project_id)
             result = graph.query(query)
-            print("Graph query result:", result.context.entities, result.context.relations, type(result.response))
+            # Only take the first entity and relation if available
+            first_entity = result.context.entities[0] if result.context.entities else None
+            first_relation = result.context.relations[0] if result.context.relations else None
+            print("Graph query result:", first_entity, first_relation, len(result.context.chunks), len(result.context.entities), len(result.context.relations))
+            print("Graph query response:", result.response)
             if isinstance(result.response, str):
                 response_text = result.response
             else:

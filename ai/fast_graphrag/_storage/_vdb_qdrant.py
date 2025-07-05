@@ -435,7 +435,7 @@ class QdrantVectorStorage(BaseVectorStorage[GTId, GTEmbedding]):
                 
                 for scored_point in search_result:
                     score = float(scored_point.score)
-                    print(f"Scored point ID {scored_point.id} with score {score} for query index {query_idx}")
+                    print(f"Scored point ID {scored_point.id} with score {score} for query index {query_idx}", threshold, str(score < threshold))
                     # Apply threshold if specified
                     if threshold is not None and score < threshold:
                         continue

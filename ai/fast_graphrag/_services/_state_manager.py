@@ -192,7 +192,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             query_embeddings = await self.embedding_service.encode(
                 [f"{n}" for n in entities["named"]] + [f"[NONE] {n}" for n in entities["generic"]] + [query]
             )
-            print(f"Query embeddings: {query_embeddings}", entities, query)
+            print(f"get_context:Query embeddings: {query_embeddings}", entities, query)
             entity_scores: List[csr_matrix] = []
             # Similarity-search over entities
             if len(entities["named"]) > 0:
@@ -205,7 +205,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
             print(f"get_context: entity_scores:", entity_scores)
             vdb_entity_scores_by_generic_entity_and_query = await self._score_entities_by_vectordb(
-                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.5
+                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.3
             )
             entity_scores.append(vdb_entity_scores_by_generic_entity_and_query)
 
@@ -220,7 +220,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         # Score entities
         try:
             graph_entity_scores = self.entity_ranking_policy(
-                await self._score_entities_by_graph(entity_scores=vdb_entity_scores)
+                await self._score_entities_by_graph(entity_scores=csr_matrix(vdb_entity_scores))
             )
             print(f"get_context:Graph entity scores:", graph_entity_scores)
         except Exception as e:
@@ -287,8 +287,8 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             return all_entity_probs_by_query_entity
         # Normalize the scores
         all_entity_probs_by_query_entity /= all_entity_probs_by_query_entity.sum(axis=1) + 1e-8
-        all_entity_weights: csr_matrix = all_entity_probs_by_query_entity.max(axis=0)  # (1, #all_entities)
-
+        all_entity_weights: csr_matrix = csr_matrix(all_entity_probs_by_query_entity.max(axis=0))  # (1, #all_entities)
+        print(f"get_context:All entity weights by query entity:", all_entity_weights)
         if self.node_specificity:
             all_entity_weights = all_entity_weights.multiply(1.0 / await self._get_entities_to_num_docs())
 
@@ -309,6 +309,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
     async def _score_chunks_by_relations(self, relationships_score: csr_matrix) -> csr_matrix:
         c2r = await self._relationships_to_chunks.get()
+        print(f"get_context:Relationships to chunks map:", c2r, type(self._relationships_to_chunks))
         if c2r is None:
             logger.warning("No relationships to chunks map was loaded.")
             return csr_matrix((1, await self.chunk_storage.size()))
