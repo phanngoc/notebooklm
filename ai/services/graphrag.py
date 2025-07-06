@@ -55,6 +55,14 @@ class GraphRAGService:
             'prefix': 'graphrag_chunks'
         }
 
+        self.neo4j_config = {
+            'uri': os.getenv('NEO4J_URI', 'bolt://localhost:7687'),
+            'username': os.getenv('NEO4J_USERNAME', 'neo4j'),
+            'password': os.getenv('NEO4J_PASSWORD', 'password123'),
+            'database': os.getenv('NEO4J_DATABASE', 'notebookllm'),
+            'ppr_damping': float(os.getenv('NEO4J_PPR_DAMPING', '0.85'))
+        }
+
         # Default domain and configuration for financial/business documents
         self.default_domain = """Analyze documents to identify key information that affects business value, growth potential, and strategic insights. 
         Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships."""
@@ -131,11 +139,11 @@ class GraphRAGService:
             neo4j_storage_config = Neo4jStorageConfig(
                 node_cls=TEntity,
                 edge_cls=TRelation,
-                uri="bolt://localhost:7687",
-                username="neo4j",
-                password="password123",
-                database=f"notebookllm",
-                ppr_damping=0.85
+                uri=self.neo4j_config['uri'],
+                username=self.neo4j_config['username'],
+                password=self.neo4j_config['password'],
+                database=self.neo4j_config['database'],
+                ppr_damping=self.neo4j_config['ppr_damping']
             )
             neo4j_storage = Neo4jStorage(config=neo4j_storage_config)
             graphrag_config.graph_storage = neo4j_storage
@@ -299,9 +307,9 @@ class GraphRAGService:
                     logger.info(f"Closed Neo4j connection for {graph_key}")
                 
                 # Close Qdrant connection
-                if (hasattr(graphrag_instance.config, 'vector_storage') and 
-                    hasattr(graphrag_instance.config.vector_storage, 'close')):
-                    graphrag_instance.config.vector_storage.close()
+                if (hasattr(graphrag_instance.config, 'entity_storage') and 
+                    hasattr(graphrag_instance.config.entity_storage, 'close')):
+                    graphrag_instance.config.entity_storage.close()
                     logger.info(f"Closed Qdrant connection for {graph_key}")
                 
                 # Close Redis connection
@@ -321,18 +329,16 @@ class GraphRAGService:
         return {
             "graph_storage": "Neo4j",
             "vector_storage": "Qdrant",
-            "chunk_storage": "Redis" if self.use_redis else "Default (Pickle)",
+            "chunk_storage": "Redis",
+            "neo4j_config": self.neo4j_config,
             "qdrant_config": self.qdrant_config,
-            "redis_config": self.redis_config if self.use_redis else None,
+            "redis_config": self.redis_config,
             "active_instances": len(self.graphrag_instances),
             "instance_keys": list(self.graphrag_instances.keys())
         }
 
     def clear_redis_data(self, user_id: str, project_id: str = "default") -> Dict[str, Any]:
         """Clear Redis data for a specific user/project"""
-        if not self.use_redis:
-            return {"error": "Redis storage not enabled", "success": False}
-        
         try:
             graph_key = self._get_graph_key(user_id, project_id)
             if graph_key in self.graphrag_instances:
@@ -352,12 +358,11 @@ class GraphRAGService:
 
     def clear_qdrant_data(self, user_id: str, project_id: str = "default") -> Dict[str, Any]:
         """Clear Qdrant data for a specific user/project"""
-
         try:
             graph_key = self._get_graph_key(user_id, project_id)
             if graph_key in self.graphrag_instances:
                 graphrag_instance = self.graphrag_instances[graph_key]
-                vector_storage = graphrag_instance.config.vector_storage
+                vector_storage = graphrag_instance.config.entity_storage
                 
                 if hasattr(vector_storage, 'delete_collection'):
                     asyncio.run(vector_storage.delete_collection())
@@ -372,12 +377,11 @@ class GraphRAGService:
 
     def get_qdrant_collection_info(self, user_id: str, project_id: str = "default") -> Dict[str, Any]:
         """Get Qdrant collection information for a specific user/project"""
-        
         try:
             graph_key = self._get_graph_key(user_id, project_id)
             if graph_key in self.graphrag_instances:
                 graphrag_instance = self.graphrag_instances[graph_key]
-                vector_storage = graphrag_instance.config.vector_storage
+                vector_storage = graphrag_instance.config.entity_storage
                 
                 if hasattr(vector_storage, 'get_collection_info'):
                     info = asyncio.run(vector_storage.get_collection_info())
