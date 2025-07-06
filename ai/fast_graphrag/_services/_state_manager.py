@@ -179,6 +179,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         # Insert chunks in chunk_storage
         progress_bar.set_description("Building... [saving chunks]")
         flattened_chunks = [chunk for chunks in documents for chunk in chunks]
+        print(f"insert_done:Saving {len(flattened_chunks)} chunks with IDs: {[chunk.id for chunk in flattened_chunks[:5]]}")  # Debug chunk IDs
         await self.chunk_storage.upsert(keys=[chunk.id for chunk in flattened_chunks], values=flattened_chunks)
         progress_bar.update(1)
         progress_bar.set_description("Building [done]")
@@ -207,7 +208,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
             print(f"get_context: entity_scores:", entity_scores)
             vdb_entity_scores_by_generic_entity_and_query = await self._score_entities_by_vectordb(
-                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.5
+                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.3
             )
             entity_scores.append(vdb_entity_scores_by_generic_entity_and_query)
 
@@ -389,16 +390,143 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         raw_relationships_to_chunks = await self.graph_storage.get_relationships_attrs(key="chunks")
         print(f"insert_done:Raw relationships to chunks map:",
               raw_relationships_to_chunks)
-        # Map Chunk IDs to indices
-        raw_relationships_to_chunks = [
-            [i for i in await self.chunk_storage.get_index(chunk_ids) if i is not None]
-            for chunk_ids in raw_relationships_to_chunks
-        ]
-        await self._relationships_to_chunks.set(
-            csr_from_indices_list(
-                raw_relationships_to_chunks, shape=(len(raw_relationships_to_chunks), await self.chunk_storage.size())
+        
+        # Debug: Check chunk storage size and sample of stored keys
+        chunk_storage_size = await self.chunk_storage.size()
+        print(f"insert_done:Chunk storage size: {chunk_storage_size}")
+        
+        # Collect all unique chunk IDs for batch processing
+        all_chunk_ids = set()
+        for chunk_ids in raw_relationships_to_chunks:
+            if chunk_ids and chunk_ids != []:
+                # Handle both single values and nested lists
+                if isinstance(chunk_ids, list):
+                    # Flatten nested lists
+                    for item in chunk_ids:
+                        if isinstance(item, list):
+                            # Handle nested lists like [[]]
+                            for nested_item in item:
+                                if nested_item is not None:
+                                    all_chunk_ids.add(nested_item)
+                        elif item is not None:
+                            all_chunk_ids.add(item)
+                else:
+                    # Single item
+                    if chunk_ids is not None:
+                        all_chunk_ids.add(chunk_ids)
+        
+        print(f"insert_done:Found {len(all_chunk_ids)} unique chunk IDs in relationships")
+        print(f"insert_done:Sample chunk IDs from relationships: {list(all_chunk_ids)[:5]}")
+        print(f"insert_done:Type of relationship chunk IDs: {type(list(all_chunk_ids)[0]) if all_chunk_ids else 'None'}")
+        
+        # Get indices for all chunk IDs at once
+        chunk_id_to_index = {}
+        if all_chunk_ids:
+            try:
+                all_chunk_ids_list = list(all_chunk_ids)
+                print(f"insert_done:Attempting batch lookup for chunk IDs: {all_chunk_ids_list[:3]}")
+                indices = await self.chunk_storage.get_index(all_chunk_ids_list)
+                indices_list = list(indices) if indices else []
+                
+                # Map chunk IDs to their indices
+                for chunk_id, index in zip(all_chunk_ids_list, indices_list):
+                    if index is not None:
+                        chunk_id_to_index[chunk_id] = index
+                        
+                print(f"insert_done:Successfully mapped {len(chunk_id_to_index)} out of {len(all_chunk_ids)} chunk IDs")
+                
+                # If no chunks were found, try converting types
+                if len(chunk_id_to_index) == 0 and len(all_chunk_ids) > 0:
+                    print("insert_done:No chunks found with original IDs, trying type conversions...")
+                    
+                    # Try converting to np.int64 if they're not already
+                    try:
+                        int64_chunk_ids = [np.int64(cid) for cid in all_chunk_ids_list]
+                        indices = await self.chunk_storage.get_index(int64_chunk_ids)
+                        indices_list = list(indices) if indices else []
+                        for orig_chunk_id, index in zip(all_chunk_ids_list, indices_list):
+                            if index is not None:
+                                chunk_id_to_index[orig_chunk_id] = index
+                                
+                        if len(chunk_id_to_index) > 0:
+                            print(f"insert_done:Found {len(chunk_id_to_index)} chunks with np.int64 conversion")
+                    except (ValueError, TypeError, OverflowError) as conv_error:
+                        print(f"insert_done:Could not convert chunk IDs to np.int64: {conv_error}")
+                    
+            except Exception as e:
+                print(f"insert_done:Error in batch index lookup: {e}")
+                # Fallback to individual lookups if batch fails
+                for chunk_id in all_chunk_ids:
+                    try:
+                        # Try with original ID first
+                        indices = await self.chunk_storage.get_index([chunk_id])
+                        indices_list = list(indices) if indices else []
+                        if indices_list and len(indices_list) > 0 and indices_list[0] is not None:
+                            chunk_id_to_index[chunk_id] = indices_list[0]
+                        else:
+                            # Try with np.int64 conversion
+                            try:
+                                int64_chunk_id = np.int64(chunk_id)
+                                indices = await self.chunk_storage.get_index([int64_chunk_id])
+                                indices_list = list(indices) if indices else []
+                                if indices_list and len(indices_list) > 0 and indices_list[0] is not None:
+                                    chunk_id_to_index[chunk_id] = indices_list[0]
+                            except (ValueError, TypeError, OverflowError):
+                                pass  # Conversion failed, skip this chunk
+                    except Exception as inner_e:
+                        print(f"insert_done:Error getting index for chunk {chunk_id}: {inner_e}")
+        
+        # Map relationships to chunk indices
+        mapped_relationships_to_chunks = []
+        for rel_idx, chunk_ids in enumerate(raw_relationships_to_chunks):
+            if not chunk_ids or chunk_ids == []:
+                mapped_relationships_to_chunks.append([])
+                continue
+                
+            mapped_indices = []
+            
+            # Handle both single values and nested lists
+            if isinstance(chunk_ids, list):
+                # Flatten nested lists and collect chunk IDs
+                flattened_chunk_ids = []
+                for item in chunk_ids:
+                    if isinstance(item, list):
+                        # Handle nested lists like [[]]
+                        for nested_item in item:
+                            if nested_item is not None:
+                                flattened_chunk_ids.append(nested_item)
+                    elif item is not None:
+                        flattened_chunk_ids.append(item)
+                
+                # Map flattened chunk IDs to indices
+                for chunk_id in flattened_chunk_ids:
+                    if chunk_id in chunk_id_to_index:
+                        mapped_indices.append(chunk_id_to_index[chunk_id])
+                    else:
+                        print(f"insert_done:Warning: Chunk ID {chunk_id} not found in storage for relationship {rel_idx}")
+            else:
+                # Single chunk ID
+                if chunk_ids in chunk_id_to_index:
+                    mapped_indices.append(chunk_id_to_index[chunk_ids])
+                else:
+                    print(f"insert_done:Warning: Chunk ID {chunk_ids} not found in storage for relationship {rel_idx}")
+                    
+            mapped_relationships_to_chunks.append(mapped_indices)
+        
+        print(f"insert_done:Mapped relationships to chunks: {mapped_relationships_to_chunks[:5]}...")  # Show first 5 for debugging
+        
+        # Create sparse matrix with proper error handling
+        if chunk_storage_size > 0:
+            relationships_to_chunks_matrix = csr_from_indices_list(
+                mapped_relationships_to_chunks, 
+                shape=(len(mapped_relationships_to_chunks), chunk_storage_size)
             )
-        )
+        else:
+            # Handle case where no chunks exist
+            relationships_to_chunks_matrix = csr_matrix((len(mapped_relationships_to_chunks), 1))
+            
+        print(f"insert_done:Final matrix shape: {relationships_to_chunks_matrix.shape}, nnz: {relationships_to_chunks_matrix.nnz}")
+        await self._relationships_to_chunks.set(relationships_to_chunks_matrix)
 
         tasks: List[Awaitable[Any]] = []
         storages: List[BaseStorage] = [
