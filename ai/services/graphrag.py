@@ -37,6 +37,24 @@ class GraphRAGService:
         # Initialize database service
         self.db_service = DatabaseService()
 
+        self.qdrant_config = {
+            'host': os.getenv('QDRANT_HOST', 'localhost'),
+            'port': int(os.getenv('QDRANT_PORT', '6333')),
+            'grpc_port': int(os.getenv('QDRANT_GRPC_PORT', '6334')) if os.getenv('QDRANT_GRPC_PORT') else None,
+            'prefer_grpc': os.getenv('QDRANT_PREFER_GRPC', 'false').lower() == 'true',
+            'https': os.getenv('QDRANT_HTTPS', 'false').lower() == 'true',
+            'collection_name': os.getenv('QDRANT_COLLECTION_NAME', 'notebookllm_embeddings'),
+            'vector_size': int(os.getenv('QDRANT_VECTOR_SIZE', '1536'))  # Default for OpenAI ada-002
+        }
+
+        self.redis_config = {
+            'host': os.getenv('REDIS_HOST', 'localhost'),
+            'port': int(os.getenv('REDIS_PORT', '6379')),
+            'db': int(os.getenv('REDIS_DB', '0')),
+            'password': os.getenv('REDIS_PASSWORD'),
+            'prefix': 'graphrag_chunks'
+        }
+
         # Default domain and configuration for financial/business documents
         self.default_domain = """Analyze documents to identify key information that affects business value, growth potential, and strategic insights. 
         Focus on entities like companies, people, financial metrics, market trends, technologies, strategies, and their relationships."""
@@ -105,12 +123,53 @@ class GraphRAGService:
             # Create user-specific working directory
             user_working_dir = os.path.join(self.working_dir, graph_key)
             os.makedirs(user_working_dir, exist_ok=True)
-        
+
+            # Create GraphRAG configuration
+            graphrag_config = GraphRAG.Config()
+            
+            # Setup Neo4j storage for graph
+            neo4j_storage_config = Neo4jStorageConfig(
+                node_cls=TEntity,
+                edge_cls=TRelation,
+                uri="bolt://localhost:7687",
+                username="neo4j",
+                password="password123",
+                database=f"notebookllm",
+                ppr_damping=0.85
+            )
+            neo4j_storage = Neo4jStorage(config=neo4j_storage_config)
+            graphrag_config.graph_storage = neo4j_storage
+
+            # Setup Qdrant vector storage
+            qdrant_storage_config = QdrantVectorStorageConfig(
+                host=self.qdrant_config['host'],
+                port=self.qdrant_config['port'],
+                grpc_port=self.qdrant_config['grpc_port'],
+                prefer_grpc=self.qdrant_config['prefer_grpc'],
+                https=self.qdrant_config['https'],
+                collection_name=f"{self.qdrant_config['collection_name']}",
+                vector_size=self.qdrant_config['vector_size'],
+            )
+            qdrant_storage = QdrantVectorStorage(config=qdrant_storage_config)
+            graphrag_config.entity_storage = qdrant_storage
+            logger.info(f"Configured Qdrant vector storage for {graph_key}")
+
+            # Conditionally setup Redis storage for chunks
+            redis_storage = RedisIndexedKeyValueStorage[THash, TChunk](
+                config=None,
+                redis_host=self.redis_config['host'],
+                redis_port=self.redis_config['port'],
+                redis_db=self.redis_config['db'],
+                redis_password=self.redis_config['password'],
+                redis_prefix=f"{self.redis_config['prefix']}_{graph_key}"
+            )
+            graphrag_config.chunk_storage = redis_storage
             self.graphrag_instances[graph_key] = GraphRAG(
                 working_dir=user_working_dir,
                 domain=config['domain'],
                 example_queries="\n".join(config['example_queries']),
                 entity_types=config['entity_types'],
+                config=graphrag_config
             )
 
         return self.graphrag_instances[graph_key]
