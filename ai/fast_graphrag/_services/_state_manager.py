@@ -156,11 +156,12 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         async def _insert_identiy_edges(
             source_index: TIndex, target_indices: npt.NDArray[np.int32]
         ) -> Iterable[Tuple[TIndex, TIndex]]:
-            return [
-                (source_index, idx)
-                for idx in target_indices
-                if idx != 0 and not await self.graph_storage.are_neighbours(source_index, idx)
-            ]
+            result: List[Tuple[TIndex, TIndex]] = []
+            for idx in target_indices:
+                idx_casted = cast(TIndex, int(idx))
+                if idx != 0 and not await self.graph_storage.are_neighbours(source_index, idx_casted):
+                    result.append((source_index, idx_casted))
+            return result
 
         new_edge_indices = list(
             chain(
@@ -190,7 +191,8 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
         try:
             query_embeddings = await self.embedding_service.encode(
-                [f"{n}" for n in entities["named"]] + [f"[NONE] {n}" for n in entities["generic"]] + [query]
+                [f"{n}" for n in entities["named"]] +
+                [f"[NONE] {n}" for n in entities["generic"]] + [query]
             )
             print(f"get_context:Query embeddings: {query_embeddings}", entities, query)
             entity_scores: List[csr_matrix] = []
@@ -286,8 +288,10 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         if all_entity_probs_by_query_entity.shape[1] == 0:
             return all_entity_probs_by_query_entity
         # Normalize the scores
-        all_entity_probs_by_query_entity /= all_entity_probs_by_query_entity.sum(axis=1) + 1e-8
-        all_entity_weights: csr_matrix = csr_matrix(all_entity_probs_by_query_entity.max(axis=0))  # (1, #all_entities)
+        all_entity_probs_by_query_entity /= all_entity_probs_by_query_entity.sum(
+            axis=1) + 1e-8
+        all_entity_weights: csr_matrix = csr_matrix(
+            all_entity_probs_by_query_entity.max(axis=0))  # (1, #all_entities)
         print(f"get_context:All entity weights by query entity:", all_entity_weights)
         if self.node_specificity:
             all_entity_weights = all_entity_weights.multiply(1.0 / await self._get_entities_to_num_docs())
@@ -377,9 +381,14 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             storage_inst.set_in_progress(True)
 
     async def insert_done(self):
-        await self._entities_to_relationships.set(await self.graph_storage.get_entities_to_relationships_map())
+        entities_to_relationships = await self.graph_storage.get_entities_to_relationships_map()
+        print(f"insert_done:Raw entities to relationships map:",
+              entities_to_relationships)
+        await self._entities_to_relationships.set(entities_to_relationships)
 
         raw_relationships_to_chunks = await self.graph_storage.get_relationships_attrs(key="chunks")
+        print(f"insert_done:Raw relationships to chunks map:",
+              raw_relationships_to_chunks)
         # Map Chunk IDs to indices
         raw_relationships_to_chunks = [
             [i for i in await self.chunk_storage.get_index(chunk_ids) if i is not None]
