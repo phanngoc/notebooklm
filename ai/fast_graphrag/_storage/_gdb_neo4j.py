@@ -6,10 +6,10 @@ Provides scalable graph storage using Neo4j for production environments.
 import json
 import os
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, Generic, Iterable, List, Mapping, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Dict, Generic, Iterable, List, Mapping, Optional, Sequence, Tuple, Type, Union, cast, LiteralString
 
 import numpy as np
-from neo4j import GraphDatabase, basic_auth
+from neo4j import GraphDatabase, basic_auth, Driver
 from scipy.sparse import csr_matrix
 
 from fast_graphrag._exceptions import InvalidStorageError
@@ -39,11 +39,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
     """Neo4j implementation of graph storage for scalable production use."""
     
     config: Neo4jStorageConfig[GTNode, GTEdge] = field()
-    _driver: Optional[Any] = field(init=False, default=None)
-    _node_id_map: Dict[str, int] = field(init=False, default_factory=dict)
-    _edge_id_map: Dict[str, int] = field(init=False, default_factory=dict)
-    _next_node_id: int = field(init=False, default=0)
-    _next_edge_id: int = field(init=False, default=0)
+    _driver: Driver = field(init=False)
 
     def __post_init__(self):
         """Initialize Neo4j driver after dataclass creation."""
@@ -62,33 +58,62 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             logger.error(f"Failed to connect to Neo4j: {e}", e)
             raise InvalidStorageError(f"Neo4j connection failed: {e}")
 
-    def _get_node_index(self, neo4j_id: str) -> int:
-        """Convert Neo4j element ID to internal integer index."""
-        if neo4j_id not in self._node_id_map:
-            self._node_id_map[neo4j_id] = self._next_node_id
-            self._next_node_id += 1
-        return self._node_id_map[neo4j_id]
+    async def _get_node_sequence_id(self, node_name: str) -> int:
+        """Get or create a sequence ID for a node using database-stored counter."""
+        cypher = """
+        OPTIONAL MATCH (existing:Entity)
+        WITH coalesce(max(existing.sequence_id), -1) + 1 AS next_id
+        MERGE (n:Entity {name: $node_name})
+        ON CREATE SET n.sequence_id = next_id
+        ON MATCH SET n.sequence_id = coalesce(n.sequence_id, next_id)
+        RETURN n.sequence_id as sequence_id
+        """
+        with self._driver.session(database=self.config.database) as session:
+            result = session.run(cypher, node_name=node_name)
+            record = result.single()
+            if record is None:
+                raise RuntimeError(f"Failed to get or create sequence ID for node: {node_name}")
+            return record["sequence_id"]
 
-    def _get_edge_index(self, neo4j_id: str) -> int:
-        """Convert Neo4j element ID to internal integer index."""
-        if neo4j_id not in self._edge_id_map:
-            self._edge_id_map[neo4j_id] = self._next_edge_id
-            self._next_edge_id += 1
-        return self._edge_id_map[neo4j_id]
+    async def _get_edge_sequence_id(self, source_name: str, target_name: str, relationship_type: str = "RELATED") -> int:
+        """Get or create a sequence ID for an edge using database-stored counter."""
+        cypher = """
+        MATCH (s:Entity {name: $source_name}), (t:Entity {name: $target_name})
+        OPTIONAL MATCH ()-[existing_rel:RELATED]->()
+        WITH s, t, coalesce(max(existing_rel.sequence_id), -1) + 1 AS next_id
+        MERGE (s)-[r:RELATED]->(t)
+        ON CREATE SET r.sequence_id = next_id
+        ON MATCH SET r.sequence_id = coalesce(r.sequence_id, next_id)
+        RETURN r.sequence_id as sequence_id
+        """
+        with self._driver.session(database=self.config.database) as session:
+            result = session.run(cypher, source_name=source_name, target_name=target_name)
+            record = result.single()
+            if record is None:
+                raise RuntimeError(f"Failed to get or create sequence ID for edge: {source_name} -> {target_name}")
+            return record["sequence_id"]
 
-    def _get_neo4j_node_id(self, index: int) -> Optional[str]:
-        """Convert internal integer index back to Neo4j element ID."""
-        for neo4j_id, idx in self._node_id_map.items():
-            if idx == index:
-                return neo4j_id
-        return None
+    async def _get_node_by_sequence_id(self, sequence_id: int) -> Optional[str]:
+        """Get node name by sequence ID."""
+        cypher = """
+        MATCH (n:Entity {sequence_id: $sequence_id})
+        RETURN n.name as name
+        """
+        with self._driver.session(database=self.config.database) as session:
+            result = session.run(cypher, sequence_id=sequence_id)
+            record = result.single()
+            return record["name"] if record else None
 
-    def _get_neo4j_edge_id(self, index: int) -> Optional[str]:
-        """Convert internal integer index back to Neo4j element ID."""
-        for neo4j_id, idx in self._edge_id_map.items():
-            if idx == index:
-                return neo4j_id
-        return None
+    async def _get_edge_by_sequence_id(self, sequence_id: int) -> Optional[Tuple[str, str]]:
+        """Get edge source and target names by sequence ID."""
+        cypher = """
+        MATCH (s:Entity)-[r:RELATED {sequence_id: $sequence_id}]->(t:Entity)
+        RETURN s.name as source_name, t.name as target_name
+        """
+        with self._driver.session(database=self.config.database) as session:
+            result = session.run(cypher, sequence_id=sequence_id)
+            record = result.single()
+            return (record["source_name"], record["target_name"]) if record else None
 
     async def save_graphml(self, path: str) -> None:
         """Export graph to GraphML format."""
@@ -103,14 +128,20 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         cypher = "MATCH (n:Entity) RETURN count(n) as count"
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher)
-            return result.single()["count"]
+            record = result.single()
+            if record is None:
+                return 0
+            return record["count"]
 
     async def edge_count(self) -> int:
         """Get total number of edges in the graph."""
         cypher = "MATCH ()-[r:RELATED]->() RETURN count(r) as count"
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher)
-            return result.single()["count"]
+            record = result.single()
+            if record is None:
+                return 0
+            return record["count"]
 
     async def get_node(self, node: Union[GTNode, GTId]) -> Union[Tuple[GTNode, TIndex], Tuple[None, None]]:
         """Retrieve a node by its identifier."""
@@ -121,7 +152,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
 
         cypher = """
         MATCH (n:Entity {name: $node_id})
-        RETURN n, elementId(n) as internal_id
+        RETURN n, n.sequence_id as sequence_id
         """
         print("Fetching node by ID:", node_id)
         with self._driver.session(database=self.config.database) as session:
@@ -132,10 +163,13 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 node_data = dict(record["n"])
                 # Deserialize nested collections
                 node_data = self._deserialize_nested_collections(node_data)
+                
+                # Remove sequence_id from node data as it's internal
+                node_data.pop('sequence_id', None)
+                
                 node_obj = self.config.node_cls(**node_data)
-                neo4j_id = record["internal_id"]
-                integer_index = self._get_node_index(neo4j_id)
-                return (node_obj, integer_index)
+                sequence_id = record["sequence_id"]
+                return (node_obj, sequence_id)
             
             return (None, None)
 
@@ -146,7 +180,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         cypher = """
         MATCH (s:Entity)-[r:RELATED]->(t:Entity)
         WHERE s.name = $source AND t.name = $target
-        RETURN r, elementId(r) as edge_id, s.name as source_name, t.name as target_name
+        RETURN r, r.sequence_id as sequence_id, s.name as source_name, t.name as target_name
         """
         
         edges: List[Tuple[GTEdge, TIndex]] = []
@@ -162,51 +196,47 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 # Deserialize nested collections
                 edge_data = self._deserialize_nested_collections(edge_data)
                 
+                # Remove sequence_id from edge data as it's internal
+                edge_data.pop('sequence_id', None)
+                
                 edge_obj = self.config.edge_cls(**edge_data)
-                neo4j_edge_id = record["edge_id"]
-                integer_index = self._get_edge_index(neo4j_edge_id)
-                edges.append((edge_obj, integer_index))
+                sequence_id = record["sequence_id"]
+                edges.append((edge_obj, sequence_id))
         
         return edges
 
     async def get_node_by_index(self, index: TIndex) -> Union[GTNode, None]:
-        """Get node by internal integer index."""
-        neo4j_id = self._get_neo4j_node_id(index)
-        if neo4j_id is None:
-            return None
-        print("Fetching node by index:", index, "Neo4j ID:", neo4j_id)
+        """Get node by sequence ID."""
         cypher = """
-        MATCH (n:Entity)
-        WHERE elementId(n) = $neo4j_id
+        MATCH (n:Entity {sequence_id: $sequence_id})
         RETURN n
         """
         
         with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher, neo4j_id=neo4j_id)
+            result = session.run(cypher, sequence_id=index)
             record = result.single()
             
             if record:
                 node_data = dict(record["n"])
                 # Deserialize nested collections
                 node_data = self._deserialize_nested_collections(node_data)
+                
+                # Remove sequence_id from node data as it's internal
+                node_data.pop('sequence_id', None)
+                
                 return self.config.node_cls(**node_data)
             
             return None
 
     async def get_edge_by_index(self, index: TIndex) -> Union[GTEdge, None]:
-        """Get edge by internal integer index."""
-        neo4j_id = self._get_neo4j_edge_id(index)
-        if neo4j_id is None:
-            return None
-            
+        """Get edge by sequence ID."""
         cypher = """
-        MATCH (s:Entity)-[r:RELATED]->(t:Entity)
-        WHERE elementId(r) = $neo4j_id
+        MATCH (s:Entity)-[r:RELATED {sequence_id: $sequence_id}]->(t:Entity)
         RETURN r, s.name as source_name, t.name as target_name
         """
         
         with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher, neo4j_id=neo4j_id)
+            result = session.run(cypher, sequence_id=index)
             record = result.single()
             
             if record:
@@ -216,6 +246,9 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 
                 # Deserialize nested collections
                 edge_data = self._deserialize_nested_collections(edge_data)
+                
+                # Remove sequence_id from edge data as it's internal
+                edge_data.pop('sequence_id', None)
                 
                 return self.config.edge_cls(**edge_data)
             
@@ -230,28 +263,27 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         
         print("Upserting node:", node_data, "Index:", node_index)
         if node_index is not None:
-            # Update existing node by internal index
-            neo4j_id = self._get_neo4j_node_id(node_index)
-            if neo4j_id is None:
-                raise InvalidStorageError(f"Node index {node_index} not found in mapping")
-                
+            # Update existing node by sequence ID
             cypher = """
-            MATCH (n:Entity)
-            WHERE elementId(n) = $neo4j_id
+            MATCH (n:Entity {sequence_id: $sequence_id})
             SET n += $properties
-            RETURN elementId(n) as internal_id
+            RETURN n.sequence_id as sequence_id
             """
             
             with self._driver.session(database=self.config.database) as session:
-                result = session.run(cypher, neo4j_id=neo4j_id, properties=node_data)
-                neo4j_element_id = result.single()["internal_id"]
-                return self._get_node_index(neo4j_element_id)
+                result = session.run(cypher, sequence_id=node_index, properties=node_data)
+                record = result.single()
+                return record["sequence_id"] if record else node_index
         else:
-            # Create new node or update if exists by name
+            # Create new node with auto-generated sequence ID
             cypher = """
+            OPTIONAL MATCH (existing:Entity)
+            WITH coalesce(max(existing.sequence_id), -1) + 1 AS next_id
             MERGE (n:Entity {name: $name})
+            ON CREATE SET n.sequence_id = next_id
+            ON MATCH SET n.sequence_id = coalesce(n.sequence_id, next_id)
             SET n += $properties
-            RETURN elementId(n) as internal_id
+            RETURN n.sequence_id as sequence_id
             """
             
             with self._driver.session(database=self.config.database) as session:
@@ -260,8 +292,10 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                     name=node_data.get("name"), 
                     properties=node_data
                 )
-                neo4j_element_id = result.single()["internal_id"]
-                return self._get_node_index(neo4j_element_id)
+                record = result.single()
+                if record is None:
+                    raise RuntimeError(f"Failed to upsert node: {node_data.get('name')}")
+                return record["sequence_id"]
 
     async def upsert_edge(self, edge: GTEdge, edge_index: Union[TIndex, None]) -> TIndex:
         """Insert or update an edge."""
@@ -273,30 +307,28 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         edge_data = self._serialize_nested_collections(edge_data)
         
         if edge_index is not None:
-            # Update existing edge by internal index
-            neo4j_id = self._get_neo4j_edge_id(edge_index)
-            if neo4j_id is None:
-                raise InvalidStorageError(f"Edge index {edge_index} not found in mapping")
-                
+            # Update existing edge by sequence ID
             cypher = """
-            MATCH ()-[r:RELATED]->()
-            WHERE elementId(r) = $neo4j_id
+            MATCH (s:Entity)-[r:RELATED {sequence_id: $sequence_id}]->(t:Entity)
             SET r += $properties
-            RETURN elementId(r) as edge_id
+            RETURN r.sequence_id as sequence_id
             """
             
             with self._driver.session(database=self.config.database) as session:
-                result = session.run(cypher, neo4j_id=neo4j_id, properties=edge_data)
-                neo4j_element_id = result.single()["edge_id"]
-                return self._get_edge_index(neo4j_element_id)
+                result = session.run(cypher, sequence_id=edge_index, properties=edge_data)
+                record = result.single()
+                return record["sequence_id"] if record else edge_index
         else:
-            # Create new edge
+            # Create new edge with auto-generated sequence ID
             cypher = """
-            MATCH (s:Entity {name: $source})
-            MATCH (t:Entity {name: $target})
-            CREATE (s)-[r:RELATED]->(t)
+            MATCH (s:Entity {name: $source}), (t:Entity {name: $target})
+            OPTIONAL MATCH ()-[existing_rel:RELATED]->()
+            WITH s, t, coalesce(max(existing_rel.sequence_id), -1) + 1 AS next_id
+            MERGE (s)-[r:RELATED]->(t)
+            ON CREATE SET r.sequence_id = next_id
+            ON MATCH SET r.sequence_id = coalesce(r.sequence_id, next_id)
             SET r += $properties
-            RETURN elementId(r) as edge_id
+            RETURN r.sequence_id as sequence_id
             """
             
             with self._driver.session(database=self.config.database) as session:
@@ -306,8 +338,10 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                     target=target, 
                     properties=edge_data
                 )
-                neo4j_element_id = result.single()["edge_id"]
-                return self._get_edge_index(neo4j_element_id)
+                record = result.single()
+                if record is None:
+                    raise RuntimeError(f"Failed to upsert edge: {source} -> {target}")
+                return record["sequence_id"]
 
     def _serialize_nested_collections(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize nested collections to JSON strings for Neo4j storage."""
@@ -355,14 +389,18 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         if edges is not None:
             edges_list = list(edges)
             
-            # Batch create edges
+            # Batch create edges with sequence IDs
             cypher = """
-            UNWIND $edges as edge_data
+            OPTIONAL MATCH ()-[existing_rel:RELATED]->()
+            WITH coalesce(max(existing_rel.sequence_id), -1) AS max_seq_id
+            UNWIND range(0, size($edges) - 1) AS idx
+            WITH max_seq_id, idx, $edges[idx] AS edge_data
             MATCH (s:Entity {name: edge_data.source})
             MATCH (t:Entity {name: edge_data.target})
             CREATE (s)-[r:RELATED]->(t)
-            SET r += edge_data.properties
-            RETURN elementId(r) as edge_id
+            SET r += edge_data.properties,
+                r.sequence_id = max_seq_id + idx + 1
+            RETURN r.sequence_id as sequence_id
             """
             
             edge_params = []
@@ -381,61 +419,66 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             with self._driver.session(database=self.config.database) as session:
                 result = session.run(cypher, edges=edge_params)
                 for record in result:
-                    neo4j_element_id = record["edge_id"]
-                    integer_index = self._get_edge_index(neo4j_element_id)
-                    edge_ids.append(integer_index)
+                    sequence_id = record["sequence_id"]
+                    edge_ids.append(sequence_id)
         
         elif indices is not None:
-            # Create edges by node indices
+            # Create edges by node sequence IDs
             indices_list = list(indices)
             
-            # Convert integer indices back to Neo4j IDs for the query
-            neo4j_pairs = []
+            # Convert sequence IDs to node names for the query
+            node_pairs = []
             for src_idx, tgt_idx in indices_list:
-                src_neo4j_id = self._get_neo4j_node_id(src_idx)
-                tgt_neo4j_id = self._get_neo4j_node_id(tgt_idx)
-                if src_neo4j_id and tgt_neo4j_id:
-                    neo4j_pairs.append({"source": src_neo4j_id, "target": tgt_neo4j_id})
+                src_name = await self._get_node_by_sequence_id(src_idx)
+                tgt_name = await self._get_node_by_sequence_id(tgt_idx)
+                if src_name and tgt_name:
+                    node_pairs.append({"source": src_name, "target": tgt_name})
             
-            if neo4j_pairs and attrs:
+            if node_pairs and attrs:
                 # Serialize nested collections in attrs
                 serialized_attrs = self._serialize_nested_collections(dict(attrs))
                 
                 cypher = """
-                UNWIND $indices as index_pair
-                MATCH (s:Entity) WHERE elementId(s) = index_pair.source
-                MATCH (t:Entity) WHERE elementId(t) = index_pair.target
+                OPTIONAL MATCH ()-[existing_rel:RELATED]->()
+                WITH coalesce(max(existing_rel.sequence_id), -1) AS max_seq_id
+                UNWIND range(0, size($indices) - 1) AS idx
+                WITH max_seq_id, idx, $indices[idx] AS node_pair
+                MATCH (s:Entity {name: node_pair.source})
+                MATCH (t:Entity {name: node_pair.target})
                 CREATE (s)-[r:RELATED]->(t)
-                SET r += $properties
-                RETURN elementId(r) as edge_id
+                SET r += $properties,
+                    r.sequence_id = max_seq_id + idx + 1
+                RETURN r.sequence_id as sequence_id
                 """
                 
                 with self._driver.session(database=self.config.database) as session:
                     result = session.run(
                         cypher, 
-                        indices=neo4j_pairs, 
+                        indices=node_pairs, 
                         properties=serialized_attrs
                     )
                     for record in result:
-                        neo4j_element_id = record["edge_id"]
-                        integer_index = self._get_edge_index(neo4j_element_id)
-                        edge_ids.append(integer_index)
-            elif neo4j_pairs:
+                        sequence_id = record["sequence_id"]
+                        edge_ids.append(sequence_id)
+            elif node_pairs:
                 # No attributes to set, just create edges
                 cypher = """
-                UNWIND $indices as index_pair
-                MATCH (s:Entity) WHERE elementId(s) = index_pair.source
-                MATCH (t:Entity) WHERE elementId(t) = index_pair.target
+                OPTIONAL MATCH ()-[existing_rel:RELATED]->()
+                WITH coalesce(max(existing_rel.sequence_id), -1) AS max_seq_id
+                UNWIND range(0, size($indices) - 1) AS idx
+                WITH max_seq_id, idx, $indices[idx] AS node_pair
+                MATCH (s:Entity {name: node_pair.source})
+                MATCH (t:Entity {name: node_pair.target})
                 CREATE (s)-[r:RELATED]->(t)
-                RETURN elementId(r) as edge_id
+                SET r.sequence_id = max_seq_id + idx + 1
+                RETURN r.sequence_id as sequence_id
                 """
                 
                 with self._driver.session(database=self.config.database) as session:
-                    result = session.run(cypher, indices=neo4j_pairs)
+                    result = session.run(cypher, indices=node_pairs)
                     for record in result:
-                        neo4j_element_id = record["edge_id"]
-                        integer_index = self._get_edge_index(neo4j_element_id)
-                        edge_ids.append(integer_index)
+                        sequence_id = record["sequence_id"]
+                        edge_ids.append(sequence_id)
         
         return edge_ids
 
@@ -448,29 +491,24 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher, source=source_node, target=target_node)
-            return result.single()["connected"]
+            record = result.single()
+            if record is None:
+                return False
+            return record["connected"]
 
     async def delete_edges_by_index(self, indices: Iterable[TIndex]) -> None:
-        """Delete edges by their internal integer indices."""
+        """Delete edges by their sequence IDs."""
         indices_list = list(indices)
         
-        # Convert integer indices to Neo4j element IDs
-        neo4j_ids = []
-        for idx in indices_list:
-            neo4j_id = self._get_neo4j_edge_id(idx)
-            if neo4j_id:
-                neo4j_ids.append(neo4j_id)
-        
-        if neo4j_ids:
+        if indices_list:
             cypher = """
-            UNWIND $neo4j_ids as edge_id
-            MATCH ()-[r:RELATED]->()
-            WHERE elementId(r) = edge_id
+            UNWIND $sequence_ids as sequence_id
+            MATCH ()-[r:RELATED {sequence_id: sequence_id}]->()
             DELETE r
             """
             
             with self._driver.session(database=self.config.database) as session:
-                session.run(cypher, neo4j_ids=neo4j_ids)
+                session.run(cypher, sequence_ids=indices_list)
 
     async def score_nodes(self, initial_weights: Optional[csr_matrix]) -> csr_matrix:
         """Calculate PageRank scores for nodes."""
@@ -510,7 +548,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
                 # Calculate PageRank
                 result = session.run(cypher_pagerank, damping=self.config.ppr_damping)
                 scores = [record["score"] for record in result]
-                
+                print(f"PageRank scores calculated: {len(scores)} nodes", scores)
                 # Clean up
                 session.run(cypher_drop_graph)
                 
@@ -530,9 +568,9 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         cypher = """
         MATCH (n:Entity)
         OPTIONAL MATCH (n)-[:RELATED]-()
-        WITH n, count(*) as degree, elementId(n) as node_id
-        RETURN node_id, degree
-        ORDER BY node_id
+        WITH n, count(*) as degree, n.sequence_id as node_seq_id
+        RETURN node_seq_id, degree
+        ORDER BY node_seq_id
         """
         
         with self._driver.session(database=self.config.database) as session:
@@ -543,11 +581,10 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
             degree_map = {}
             
             for record in result:
-                node_neo4j_id = record["node_id"]
+                node_seq_id = record["node_seq_id"]
                 degree = record["degree"]
-                node_idx = self._get_node_index(node_neo4j_id)
-                degree_map[node_idx] = degree
-                max_index = max(max_index, node_idx)
+                degree_map[node_seq_id] = degree
+                max_index = max(max_index, node_seq_id)
             
             if max_index == -1:
                 return csr_matrix((1, 0))
@@ -568,32 +605,31 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         """Get entity-relationship adjacency matrix."""
         cypher = """
         MATCH (n:Entity)
-        WITH n, elementId(n) as node_id
-        ORDER BY node_id
+        WITH n, n.sequence_id as node_seq_id
+        ORDER BY node_seq_id
         OPTIONAL MATCH (n)-[r:RELATED]-()
-        WITH elementId(n) as node_id, collect(DISTINCT elementId(r)) as edge_ids
-        RETURN node_id, edge_ids
+        WITH n.sequence_id as node_seq_id, collect(DISTINCT r.sequence_id) as edge_seq_ids
+        RETURN node_seq_id, edge_seq_ids
         """
         
         with self._driver.session(database=self.config.database) as session:
             result = session.run(cypher)
             
             node_edges = []
+            max_node_idx = -1
+            
             for record in result:
-                node_neo4j_id = record["node_id"]
-                edge_neo4j_ids = record["edge_ids"] or []
-                
-                # Convert Neo4j IDs to integer indices
-                node_idx = self._get_node_index(node_neo4j_id)
-                edge_indices = [self._get_edge_index(edge_id) for edge_id in edge_neo4j_ids if edge_id]
+                node_seq_id = record["node_seq_id"] or 0
+                edge_seq_ids = record["edge_seq_ids"] or []
                 
                 # Ensure we have enough entries in the list
-                while len(node_edges) <= node_idx:
+                while len(node_edges) <= node_seq_id:
                     node_edges.append([])
                 
-                node_edges[node_idx] = edge_indices
+                node_edges[node_seq_id] = [eid for eid in edge_seq_ids if eid is not None]
+                max_node_idx = max(max_node_idx, node_seq_id)
             
-            if not node_edges:
+            if max_node_idx == -1:
                 return csr_matrix((0, 0))
             
             node_count = await self.node_count()
@@ -606,40 +642,44 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
 
     async def get_relationships_attrs(self, key: str) -> List[List[Any]]:
         """Get relationship attributes by key."""
+        # Neo4j doesn't support parameterized property names, so we need to validate the key
+        # to prevent injection attacks
+        if not key.replace('_', '').isalnum():
+            raise ValueError(f"Invalid property key: {key}")
+            
         cypher = f"""
         MATCH ()-[r:RELATED]->()
-        RETURN r.{key} as attr_value, elementId(r) as edge_id
-        ORDER BY elementId(r)
+        RETURN r.`{key}` as attr_value, r.sequence_id as edge_seq_id
+        ORDER BY r.sequence_id
         """
         
         with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher)
+            result = session.run(cast(LiteralString, cypher))
             
-            # Create a map from integer index to attribute values
+            # Create a map from sequence ID to attribute values
             max_index = -1
             attr_map = {}
             
             for record in result:
-                edge_neo4j_id = record["edge_id"]
+                edge_seq_id = record["edge_seq_id"] or 0
                 attr_value = record["attr_value"]
-                edge_idx = self._get_edge_index(edge_neo4j_id)
                 
                 # Handle deserialization of JSON strings
                 if isinstance(attr_value, str):
                     try:
                         parsed = json.loads(attr_value)
                         if isinstance(parsed, list):
-                            attr_map[edge_idx] = parsed
+                            attr_map[edge_seq_id] = parsed
                         else:
-                            attr_map[edge_idx] = [parsed] if parsed is not None else []
+                            attr_map[edge_seq_id] = [parsed] if parsed is not None else []
                     except (json.JSONDecodeError, TypeError):
-                        attr_map[edge_idx] = [attr_value] if attr_value is not None else []
+                        attr_map[edge_seq_id] = [attr_value] if attr_value is not None else []
                 elif isinstance(attr_value, list):
-                    attr_map[edge_idx] = attr_value
+                    attr_map[edge_seq_id] = attr_value
                 else:
-                    attr_map[edge_idx] = [attr_value] if attr_value is not None else []
+                    attr_map[edge_seq_id] = [attr_value] if attr_value is not None else []
                 
-                max_index = max(max_index, edge_idx)
+                max_index = max(max_index, edge_seq_id)
             
             # Create ordered list of attributes
             attrs = []
@@ -652,34 +692,17 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
         """Initialize graph schema and constraints."""
         constraints = [
             "CREATE CONSTRAINT entity_name IF NOT EXISTS FOR (n:Entity) REQUIRE n.name IS UNIQUE",
-            "CREATE INDEX entity_name_index IF NOT EXISTS FOR (n:Entity) ON (n.name)"
+            "CREATE INDEX entity_name_index IF NOT EXISTS FOR (n:Entity) ON (n.name)",
+            "CREATE INDEX entity_sequence_id IF NOT EXISTS FOR (n:Entity) ON (n.sequence_id)",
+            "CREATE INDEX relationship_sequence_id IF NOT EXISTS FOR ()-[r:RELATED]-() ON (r.sequence_id)"
         ]
         
         with self._driver.session(database=self.config.database) as session:
             for constraint in constraints:
                 try:
-                    session.run(constraint)
+                    session.run(cast(LiteralString, constraint))
                 except Exception as e:
                     logger.debug(f"Constraint/index already exists or failed: {e}")
-        
-        # Initialize ID mappings for existing nodes and edges
-        await self._initialize_id_mappings()
-
-    async def _initialize_id_mappings(self):
-        """Initialize ID mappings for existing nodes and edges in the database."""
-        # Initialize node mappings
-        cypher_nodes = "MATCH (n:Entity) RETURN elementId(n) as node_id ORDER BY node_id"
-        with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher_nodes)
-            for record in result:
-                self._get_node_index(record["node_id"])
-        
-        # Initialize edge mappings
-        cypher_edges = "MATCH ()-[r:RELATED]->() RETURN elementId(r) as edge_id ORDER BY edge_id"
-        with self._driver.session(database=self.config.database) as session:
-            result = session.run(cypher_edges)
-            for record in result:
-                self._get_edge_index(record["edge_id"])
 
     async def _insert_done(self):
         """Finalize insert operations."""
@@ -688,6 +711,7 @@ class Neo4jStorage(BaseGraphStorage[GTNode, GTEdge, GTId]):
 
     async def _query_start(self):
         """Prepare for query operations."""
+        # No need to load mappings anymore - using direct database queries
         pass
 
     async def _query_done(self):

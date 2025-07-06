@@ -156,11 +156,12 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         async def _insert_identiy_edges(
             source_index: TIndex, target_indices: npt.NDArray[np.int32]
         ) -> Iterable[Tuple[TIndex, TIndex]]:
-            return [
-                (source_index, idx)
-                for idx in target_indices
-                if idx != 0 and not await self.graph_storage.are_neighbours(source_index, idx)
-            ]
+            result: List[Tuple[TIndex, TIndex]] = []
+            for idx in target_indices:
+                idx_casted = cast(TIndex, int(idx))
+                if idx != 0 and not await self.graph_storage.are_neighbours(source_index, idx_casted):
+                    result.append((source_index, idx_casted))
+            return result
 
         new_edge_indices = list(
             chain(
@@ -190,8 +191,10 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
         try:
             query_embeddings = await self.embedding_service.encode(
-                [f"{n}" for n in entities["named"]] + [f"[NONE] {n}" for n in entities["generic"]] + [query]
+                [f"{n}" for n in entities["named"]] +
+                [f"[NONE] {n}" for n in entities["generic"]] + [query]
             )
+            print(f"get_context:Query embeddings: {query_embeddings}", entities, query)
             entity_scores: List[csr_matrix] = []
             # Similarity-search over entities
             if len(entities["named"]) > 0:
@@ -202,8 +205,9 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
                 )
                 entity_scores.append(vdb_entity_scores_by_named_entity)
 
+            print(f"get_context: entity_scores:", entity_scores)
             vdb_entity_scores_by_generic_entity_and_query = await self._score_entities_by_vectordb(
-                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.5
+                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.3
             )
             entity_scores.append(vdb_entity_scores_by_generic_entity_and_query)
 
@@ -218,8 +222,9 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         # Score entities
         try:
             graph_entity_scores = self.entity_ranking_policy(
-                await self._score_entities_by_graph(entity_scores=vdb_entity_scores)
+                await self._score_entities_by_graph(entity_scores=csr_matrix(vdb_entity_scores))
             )
+            print(f"get_context:Graph entity scores:", graph_entity_scores)
         except Exception as e:
             logger.error(f"Error during graph scoring for entities. Non-zero elements: {vdb_entity_scores.nnz}.\n{e}")
             raise e
@@ -227,9 +232,11 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         try:
             # All score vectors should be row vectors
             indices, scores = extract_sorted_scores(graph_entity_scores)
+            print(f"get_context:Indices and scores:", indices, scores)
             relevant_entities: List[Tuple[TEntity, TScore]] = []
             for i, s in zip(indices, scores):
                 entity = await self.graph_storage.get_node_by_index(i)
+                print(f"get_context:Entity at index {i} with score {s}:", entity)
                 if entity is not None:
                     relevant_entities.append((entity, s))
 
@@ -237,7 +244,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             relation_scores = self.relation_ranking_policy(
                 await self._score_relationships_by_entities(entity_scores=graph_entity_scores)
             )
-
+            print(f"get_context:Relation scores:", relation_scores)
             indices, scores = extract_sorted_scores(relation_scores)
             relevant_relationships: List[Tuple[TRelation, TScore]] = []
             for i, s in zip(indices, scores):
@@ -249,6 +256,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             chunk_scores = self.chunk_ranking_policy(
                 await self._score_chunks_by_relations(relationships_score=relation_scores)
             )
+            print(f"get_context:Chunk scores:", chunk_scores)
             indices, scores = extract_sorted_scores(chunk_scores)
             relevant_chunks: List[Tuple[TChunk, TScore]] = []
             for chunk, s in zip(await self.chunk_storage.get_by_index(indices), scores):
@@ -280,9 +288,11 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
         if all_entity_probs_by_query_entity.shape[1] == 0:
             return all_entity_probs_by_query_entity
         # Normalize the scores
-        all_entity_probs_by_query_entity /= all_entity_probs_by_query_entity.sum(axis=1) + 1e-8
-        all_entity_weights: csr_matrix = all_entity_probs_by_query_entity.max(axis=0)  # (1, #all_entities)
-
+        all_entity_probs_by_query_entity /= all_entity_probs_by_query_entity.sum(
+            axis=1) + 1e-8
+        all_entity_weights: csr_matrix = csr_matrix(
+            all_entity_probs_by_query_entity.max(axis=0))  # (1, #all_entities)
+        print(f"get_context:All entity weights by query entity:", all_entity_weights)
         if self.node_specificity:
             all_entity_weights = all_entity_weights.multiply(1.0 / await self._get_entities_to_num_docs())
 
@@ -303,6 +313,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
     async def _score_chunks_by_relations(self, relationships_score: csr_matrix) -> csr_matrix:
         c2r = await self._relationships_to_chunks.get()
+        print(f"get_context:Relationships to chunks map:", c2r, type(self._relationships_to_chunks))
         if c2r is None:
             logger.warning("No relationships to chunks map was loaded.")
             return csr_matrix((1, await self.chunk_storage.size()))
@@ -370,9 +381,14 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             storage_inst.set_in_progress(True)
 
     async def insert_done(self):
-        await self._entities_to_relationships.set(await self.graph_storage.get_entities_to_relationships_map())
+        entities_to_relationships = await self.graph_storage.get_entities_to_relationships_map()
+        print(f"insert_done:Raw entities to relationships map:",
+              entities_to_relationships)
+        await self._entities_to_relationships.set(entities_to_relationships)
 
         raw_relationships_to_chunks = await self.graph_storage.get_relationships_attrs(key="chunks")
+        print(f"insert_done:Raw relationships to chunks map:",
+              raw_relationships_to_chunks)
         # Map Chunk IDs to indices
         raw_relationships_to_chunks = [
             [i for i in await self.chunk_storage.get_index(chunk_ids) if i is not None]

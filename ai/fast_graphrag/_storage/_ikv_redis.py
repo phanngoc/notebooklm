@@ -144,9 +144,11 @@ class RedisIndexedKeyValueStorage(BaseIndexedKeyValueStorage[GTKey, GTValue]):
         """Get values by indices"""
         results = []
         try:
+            print(f"get_by_index:indices:", indices)
             for index in indices:
                 data_key = self._get_data_key(index)
                 data = self._redis_client.get(data_key)
+                print(f"get_by_index:data_key:{data_key}, data:", data)
                 if data:
                     results.append(self._deserialize_value(data))
                 else:
