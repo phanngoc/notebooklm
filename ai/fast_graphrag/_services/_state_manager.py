@@ -207,7 +207,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
             print(f"get_context: entity_scores:", entity_scores)
             vdb_entity_scores_by_generic_entity_and_query = await self._score_entities_by_vectordb(
-                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.3
+                query_embeddings=query_embeddings[len(entities["named"]) :], top_k=20, threshold=0.5
             )
             entity_scores.append(vdb_entity_scores_by_generic_entity_and_query)
 
