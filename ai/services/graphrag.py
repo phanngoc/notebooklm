@@ -225,64 +225,10 @@ class GraphRAGService:
             graph_key = self._get_graph_key(user_id, project_id)
             if graph_key in self.graphrag_instances:
                 graphrag_instance = self.graphrag_instances[graph_key]
-                
-                # Close Neo4j connection
-                try:
-                    if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
-                        graphrag_instance.config.graph_storage.close()
-                except Exception as e:
-                    logger.warning(f"Error closing Neo4j connection for {graph_key}: {e}")
-                
-                # Close Qdrant connection if using Qdrant storage
-                try:
-                    if (hasattr(graphrag_instance.config, 'vector_storage') and 
-                        hasattr(graphrag_instance.config.vector_storage, 'close')):
-                        graphrag_instance.config.vector_storage.close()
-                except Exception as e:
-                    logger.warning(f"Error closing Qdrant connection for {graph_key}: {e}")
-                
-                # Close Redis connection if using Redis storage
-                try:
-                    if (hasattr(graphrag_instance.config, 'chunk_storage') and 
-                        hasattr(graphrag_instance.config.chunk_storage, 'close')):
-                        graphrag_instance.config.chunk_storage.close()
-                except Exception as e:
-                    logger.warning(f"Error closing Redis connection for {graph_key}: {e}")
-                finally:
-                   del self.graphrag_instances[graph_key]
-                   logger.info(f"Cleared GraphRAG cache for {graph_key}")
-        else:
-            # Clear all instances for the user
-            keys_to_remove = [key for key in self.graphrag_instances.keys() if key.startswith(f"{user_id}_")]
-            for key in keys_to_remove:
-                graphrag_instance = self.graphrag_instances[key]
-                
-                # Close Neo4j connections
-                try:
-                    if hasattr(graphrag_instance.config, 'graph_storage') and hasattr(graphrag_instance.config.graph_storage, 'close'):
-                        graphrag_instance.config.graph_storage.close()
-                except Exception as e:
-                    logger.warning(f"Error closing Neo4j connection for {key}: {e}")
-                
-                # Close Qdrant connections if using Qdrant storage
-                try:
-                    if (hasattr(graphrag_instance.config, 'vector_storage') and 
-                        hasattr(graphrag_instance.config.vector_storage, 'close')):
-                        graphrag_instance.config.vector_storage.close()
-                except Exception as e:
-                    logger.warning(f"Error closing Qdrant connection for {key}: {e}")
-                
-                # Close Redis connections if using Redis storage
 
-                try:
-                    if (hasattr(graphrag_instance.config, 'chunk_storage') and 
-                        hasattr(graphrag_instance.config.chunk_storage, 'close')):
-                        graphrag_instance.config.chunk_storage.close()
-                except Exception as e:
-                    logger.warning(f"Error closing Redis connection for {key}: {e}")
-                
-                del self.graphrag_instances[key]
-            logger.info(f"Cleared all GraphRAG cache for user {user_id}")
+                # Close Redis connection if using Redis storage
+                del self.graphrag_instances[graph_key]
+                logger.info(f"Cleared GraphRAG cache for {graph_key}")
 
     def close_all_connections(self):
         """Close all connections (Neo4j, Qdrant, and Redis) - call this when shutting down the service"""
