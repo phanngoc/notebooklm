@@ -15,11 +15,9 @@ class PickleBlobStorage(BaseBlobStorage[GTBlob]):
     _data: Optional[GTBlob] = field(init=False, default=None)
 
     async def get(self) -> Optional[GTBlob]:
-        print(f"PickleBlobStorage:Retrieving blob storage data:", self._data)
         return self._data
 
     async def set(self, blob: GTBlob) -> None:
-        print(f"PickleBlobStorage:Setting blob storage data:", blob)
         self._data = blob
 
     async def _insert_start(self):
@@ -44,7 +42,6 @@ class PickleBlobStorage(BaseBlobStorage[GTBlob]):
         if self.namespace:
             data_file_name = self.namespace.get_save_path(self.RESOURCE_NAME)
             try:
-                print(f"PickleBlobStorage:_insert_done:Saving blob storage to file {data_file_name}.", self._data)
                 with open(data_file_name, "wb") as f:
                     pickle.dump(self._data, f)
                 logger.debug(
@@ -62,7 +59,6 @@ class PickleBlobStorage(BaseBlobStorage[GTBlob]):
             try:
                 with open(data_file_name, "rb") as f:
                     self._data = pickle.load(f)
-                    print(f"PickleBlobStorage:_query_start:Loaded blob storage from file {data_file_name}.", self._data)
             except Exception as e:
                 t = f"Error loading data file for blob storage {data_file_name}: {e}"
                 logger.error(t)

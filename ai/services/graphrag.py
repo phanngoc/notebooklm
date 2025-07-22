@@ -7,10 +7,7 @@ import concurrent.futures
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from fast_graphrag import GraphRAG
-from fast_graphrag._storage._gdb_neo4j import Neo4jStorage, Neo4jStorageConfig
-from fast_graphrag._storage._ikv_redis import RedisIndexedKeyValueStorage
-from fast_graphrag._storage._vdb_qdrant import QdrantVectorStorage, QdrantVectorStorageConfig
+from fast_graphrag import GraphRAG, QueryParam
 from fast_graphrag._types import TEntity, TRelation, TId, THash, TChunk
 from .database import DatabaseService
 
@@ -179,23 +176,18 @@ class GraphRAGService:
             print(f"Querying graph for user {user_id}: {query}")
 
             graph = self._get_or_create_graphrag(user_id, project_id)
-            result = graph.query(query)
-            # Only take the first entity and relation if available
-            first_entity = result.context.entities[0] if result.context.entities else None
-            first_relation = result.context.relations[0] if result.context.relations else None
-            print("Graph query result:", first_entity, first_relation, len(result.context.chunks), len(result.context.entities), len(result.context.relations))
-            print("Graph query response:", result.response)
+            result = graph.query(query, QueryParam(with_references=True))
+            print('query_graph:', result)
+
             if isinstance(result.response, str):
                 response_text = result.response
             else:
                 response_text = result.response.answer
 
-            chunks = result.context.chunks
-            print("Graph query chunks:", chunks, type(result), response_text)
 
             return {
                 'response': response_text,
-                'context': {},
+                'context': result.context,
                 'success': True,
                 'error': ""
             }

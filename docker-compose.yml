@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Qdrant Vector Database
   qdrant:
@@ -144,4 +142,3 @@ volumes:
 
 networks:
   default:
-    name: notebookllm-network

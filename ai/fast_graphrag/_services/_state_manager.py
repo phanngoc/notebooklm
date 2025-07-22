@@ -244,7 +244,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             relation_scores = self.relation_ranking_policy(
                 await self._score_relationships_by_entities(entity_scores=graph_entity_scores)
             )
-            print(f"get_context:Relation scores:", relation_scores)
+
             indices, scores = extract_sorted_scores(relation_scores)
             relevant_relationships: List[Tuple[TRelation, TScore]] = []
             for i, s in zip(indices, scores):
@@ -256,7 +256,7 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
             chunk_scores = self.chunk_ranking_policy(
                 await self._score_chunks_by_relations(relationships_score=relation_scores)
             )
-            print(f"get_context:Chunk scores:", chunk_scores)
+
             indices, scores = extract_sorted_scores(chunk_scores)
             relevant_chunks: List[Tuple[TChunk, TScore]] = []
             for chunk, s in zip(await self.chunk_storage.get_by_index(indices), scores):
@@ -382,13 +382,9 @@ class DefaultStateManagerService(BaseStateManagerService[TEntity, TRelation, THa
 
     async def insert_done(self):
         entities_to_relationships = await self.graph_storage.get_entities_to_relationships_map()
-        print(f"insert_done:Raw entities to relationships map:",
-              entities_to_relationships)
         await self._entities_to_relationships.set(entities_to_relationships)
 
         raw_relationships_to_chunks = await self.graph_storage.get_relationships_attrs(key="chunks")
-        print(f"insert_done:Raw relationships to chunks map:",
-              raw_relationships_to_chunks)
         # Map Chunk IDs to indices
         raw_relationships_to_chunks = [
             [i for i in await self.chunk_storage.get_index(chunk_ids) if i is not None]
